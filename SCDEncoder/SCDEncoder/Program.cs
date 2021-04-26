@@ -11,7 +11,7 @@ namespace SCDEncoder
     class Program
     {
         private static readonly string TOOLS_PATH = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), "tools");
-        private static readonly string SCD_HEADER_FILE = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), "scd/header.scd");
+        private static readonly string DUMMY_SCD_HEADER_FILE = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), "scd/header.scd");
 
         private const string TMP_FOLDER_NAME = "tmp";
         private const string VAG_OUT_FOLDER_NAME = "out";
@@ -22,9 +22,17 @@ namespace SCDEncoder
             if (args.Length > 0)
             {
                 var inputFile = args[0];
-                var outputFolder = args.Length == 1 ? "output" : args[1];
+                var outputFolder = args.Length > 1 ? args[1] : "output";
+                var originalScdFile = args.Length > 2 ? args[2] : null;
 
                 // Check for tools
+
+                if (!File.Exists(@$"{TOOLS_PATH}/iopvoiceext/IOPVOICEExt.exe"))
+                {
+                    Console.WriteLine($"Please put IOPVOICEExt.exe in the tools folder: {TOOLS_PATH}/iopvoiceext");
+                    return;
+                }
+
                 if (!File.Exists(@$"{TOOLS_PATH}/vgmstream/test.exe"))
                 {
                     Console.WriteLine($"Please put test.exe in the tools folder: {TOOLS_PATH}/vgmstream");
@@ -46,12 +54,12 @@ namespace SCDEncoder
                     outputFolder = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), outputFolder, directory.Name);
                     foreach (var file in Directory.GetFiles(args[0], "*"))
                     {
-                        ConvertFile(file, outputFolder);
+                        ConvertFile(file, outputFolder, originalScdFile);
                     }
                 }
                 else
                 {
-                    ConvertFile(args[0], outputFolder);
+                    ConvertFile(args[0], outputFolder, originalScdFile);
                 }
             }
             else
@@ -61,7 +69,7 @@ namespace SCDEncoder
             }
         }
 
-        private static void ConvertFile(string inputFile, string outputFolder)
+        private static void ConvertFile(string inputFile, string outputFolder, string originalScd = null)
         {
             var tmpFolder = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), TMP_FOLDER_NAME);
             var vagOutFolder = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), VAG_OUT_FOLDER_NAME);
@@ -82,6 +90,8 @@ namespace SCDEncoder
             var p = new Process();
 
             var vagFiles = new List<string>();
+            var wavPCMFiles = new List<string>();
+            var wavADPCMFiles = new List<string>();
 
             if (Path.GetExtension(inputFile) == ".vsb")
             {
@@ -113,7 +123,6 @@ namespace SCDEncoder
                 foreach (var vagFile in vagFiles)
                 {
                     var currentWavPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(vagFile)}-pcm.wav");
-                    var currentWavADPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(vagFile)}{ADPCM_SUFFIX}.wav");
 
                     p.StartInfo.FileName = $@"{TOOLS_PATH}/vgmstream/test.exe";
                     p.StartInfo.Arguments = $"-o \"{currentWavPCMPath}\" \"{vagFile}\"";
@@ -122,72 +131,123 @@ namespace SCDEncoder
                     p.Start();
                     p.WaitForExit();
 
-                    // Convert WAV PCM into WAV MS-ADPCM
-                    //p.StartInfo.FileName = $@"{TOOLS_PATH}/adpcmencode/adpcmencode3.exe";
-                    //p.StartInfo.Arguments = $"-b 32 \"{currentWavPCMPath}\" \"{currentWavADPCMPath}\"";
-                    //p.StartInfo.UseShellExecute = false;
-                    //p.StartInfo.RedirectStandardInput = false;
-                    //p.Start();
-                    //p.WaitForExit();
+                    wavPCMFiles.Add(currentWavPCMPath);
                 }
             }
+            else
+            {
+                wavPCMFiles.Add(wavPCMPath);
+            }
 
-            return;
+            foreach (var wavPCMFile in wavPCMFiles)
+            {
+                var currentWavADPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(wavPCMFile)}{ADPCM_SUFFIX}.wav");
+
+                // Convert WAV PCM into WAV MS-ADPCM
+                p.StartInfo.FileName = $@"{TOOLS_PATH}/adpcmencode/adpcmencode3.exe";
+                p.StartInfo.Arguments = $"-b 32 \"{wavPCMFile}\" \"{currentWavADPCMPath}\"";
+                p.StartInfo.UseShellExecute = false;
+                p.StartInfo.RedirectStandardInput = false;
+                p.Start();
+                p.WaitForExit();
+
+                wavADPCMFiles.Add(currentWavADPCMPath);
+            }
 
             p.Close();
 
-            CreateSCD(wavADPCMPath, scdPath);
+            CreateSCD(wavADPCMFiles, scdPath, originalScd);
 
             File.Copy(scdPath, outputFile, true);
 
             Console.WriteLine($"Converted {Path.GetFileName(inputFile)} into {Path.GetFileName(outputFile)}. (output: {outputFile})");
 
-            //Directory.Delete(tmpFolder, true);
+#if RELEASE
+            Directory.Delete(tmpFolder, true);
+#endif
         }
 
-        private static void CreateSCD(string wavFilePath, string outputFile)
+        private struct Wav
         {
-            var streamName = Path.GetFileNameWithoutExtension(wavFilePath).Replace("-adpcm", "");
-            var wavData = StripWavHeader(File.ReadAllBytes(wavFilePath));
-            var waveFile = new WaveFileReader(wavFilePath);
-            var dummyScd = File.ReadAllBytes(SCD_HEADER_FILE);
+            public int SampleRate;
+            public int BlockAlign;
+            public int Channels;
+            public string Name;
+            public byte[] Data;
+        }
 
-            using (var writer = new BinaryWriter(new MemoryStream(dummyScd)))
+        private static void CreateSCD(List<string> wavFiles, string outputFile, string originalScd = null)
+        {
+            var wavData = new List<Wav>();
+
+            foreach (var wavFile in wavFiles)
             {
-                var totalFileSize = dummyScd.Length + wavData.Length;
+                var wavContent = StripWavHeader(File.ReadAllBytes(wavFile));
+                var waveFileInfo = new WaveFileReader(wavFile);
 
-                // Total file size
-                writer.BaseStream.Position = 0x10;
-                writer.Write(totalFileSize);
+                var wavDataEntry = new Wav()
+                {
+                    SampleRate = waveFileInfo.WaveFormat.SampleRate,
+                    BlockAlign = waveFileInfo.BlockAlign,
+                    Channels = waveFileInfo.WaveFormat.Channels,
+                    Name = Path.GetFileNameWithoutExtension(wavFile).Replace(ADPCM_SUFFIX, ""),
+                    Data = wavContent,
+                };
 
-                // Stream name
-                writer.BaseStream.Position = 0x150;
-                writer.Write(Encoding.UTF8.GetBytes(streamName));
+                waveFileInfo.Close();
 
-                // Audio data size
-                writer.BaseStream.Position = 0x250;
-                writer.Write(wavData.Length);
-
-                // Channel count
-                writer.BaseStream.Position = 0x254;
-                writer.Write((uint)waveFile.WaveFormat.Channels);
-
-                // Sample rate
-                writer.BaseStream.Position = 0x258;
-                writer.Write((uint)waveFile.WaveFormat.SampleRate);
-
-                // Frame size / Block align
-                writer.BaseStream.Position = 0x27C;
-                writer.Write((short)waveFile.WaveFormat.BlockAlign);
+                wavData.Add(wavDataEntry);
             }
 
-            waveFile.Close();
+            var scdHeader = string.IsNullOrEmpty(originalScd) ? File.ReadAllBytes(DUMMY_SCD_HEADER_FILE) : ExtractScdHeader(originalScd);
+            var totalWavDataLenght = wavData.Sum(wav => wav.Data.Length);
+            var finalScd = new byte[scdHeader.Length + totalWavDataLenght];
+            Array.Copy(scdHeader, finalScd, scdHeader.Length);
 
-            var finalScd = new byte[dummyScd.Length + wavData.Length];
-            Array.Copy(dummyScd, finalScd, dummyScd.Length);
-            Array.Copy(wavData, 0, finalScd, dummyScd.Length, wavData.Length);
+            using (var writer = new BinaryWriter(new MemoryStream(scdHeader)))
+            {
+                foreach (var wav in wavData)
+                {
+                    var totalFileSize = scdHeader.Length + wav.Data.Length;
+
+                    // Total file size
+                    writer.BaseStream.Position = 0x10;
+                    writer.Write(totalFileSize);
+
+                    // Stream name
+                    //writer.BaseStream.Position = 0x150;
+                    //writer.Write(Encoding.UTF8.GetBytes(streamName));
+
+                    // Audio data size
+                    writer.BaseStream.Position = 0x250;
+                    writer.Write(wav.Data.Length);
+
+                    // Channel count
+                    writer.BaseStream.Position = 0x254;
+                    writer.Write((uint)wav.Channels);
+
+                    // Sample rate
+                    writer.BaseStream.Position = 0x258;
+                    writer.Write((uint)wav.SampleRate);
+
+                    // Frame size / Block align
+                    writer.BaseStream.Position = 0x27C;
+                    writer.Write((short)wav.BlockAlign);
+
+                    // TODO: Update table offsets!
+
+                    // TODO: This is not correct
+                    Array.Copy(wav.Data, 0, finalScd, scdHeader.Length, totalWavDataLenght);
+                }
+            }
 
             File.WriteAllBytes(outputFile, finalScd);
+        }
+
+        private static byte[] ExtractScdHeader(string originalScd)
+        {
+            // TODO: Implement this
+            return new byte[0];
         }
 
         private static byte[] StripWavHeader(byte[] wavData)
