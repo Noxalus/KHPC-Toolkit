@@ -1,5 +1,6 @@
 ﻿using NAudio.Wave;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -13,6 +14,7 @@ namespace SCDEncoder
         private static readonly string SCD_HEADER_FILE = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), "scd/header.scd");
 
         private const string TMP_FOLDER_NAME = "tmp";
+        private const string VAG_OUT_FOLDER_NAME = "out";
         private const string ADPCM_SUFFIX = "-adpcm";
 
         static void Main(string[] args)
@@ -62,11 +64,15 @@ namespace SCDEncoder
         private static void ConvertFile(string inputFile, string outputFolder)
         {
             var tmpFolder = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), TMP_FOLDER_NAME);
+            var vagOutFolder = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), VAG_OUT_FOLDER_NAME);
 
             if (!Directory.Exists(tmpFolder))
                 Directory.CreateDirectory(tmpFolder);
             if (!Directory.Exists(outputFolder))
                 Directory.CreateDirectory(outputFolder);
+
+            if (Directory.Exists(vagOutFolder))
+                Directory.Delete(vagOutFolder, true);
 
             var wavPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(inputFile)}.wav");
             var wavADPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(inputFile)}{ADPCM_SUFFIX}.wav");
@@ -75,28 +81,58 @@ namespace SCDEncoder
 
             var p = new Process();
 
-            if (Path.GetExtension(inputFile) == ".vag")
+            var vagFiles = new List<string>();
+
+            if (Path.GetExtension(inputFile) == ".vsb")
             {
-                // Convert VAG to WAV
-                p.StartInfo.FileName = $@"{TOOLS_PATH}/vgmstream/test.exe";
-                p.StartInfo.Arguments = $"-o \"{wavPCMPath}\" \"{inputFile}\"";
+                // Convert VSB into VAG files
+                p.StartInfo.FileName = $@"{TOOLS_PATH}/iopvoiceext/IOPVOICEExt.exe";
                 p.StartInfo.UseShellExecute = false;
-                p.StartInfo.RedirectStandardInput = false;
+                p.StartInfo.RedirectStandardInput = true;
                 p.Start();
+
+                p.StandardInput.WriteLine(inputFile);
+                p.StandardInput.WriteLine(" ");
+
                 p.WaitForExit();
+
+                vagFiles.AddRange(Directory.GetFiles(vagOutFolder, "*.vag"));
+            }
+            else if (Path.GetExtension(inputFile) == ".vag")
+            {
+                vagFiles.Add(inputFile);
             }
             else
             {
                 File.Copy(inputFile, wavPCMPath, true);
             }
 
-            // Convert WAV PCM into WAV MS-ADPCM
-            p.StartInfo.FileName = $@"{TOOLS_PATH}/adpcmencode/adpcmencode3.exe";
-            p.StartInfo.Arguments = $"-b 32 \"{wavPCMPath}\" \"{wavADPCMPath}\"";
-            p.StartInfo.UseShellExecute = false;
-            p.StartInfo.RedirectStandardInput = false;
-            p.Start();
-            p.WaitForExit();
+            // Convert VAG to WAV
+            if (vagFiles.Count > 0)
+            {
+                foreach (var vagFile in vagFiles)
+                {
+                    var currentWavPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(vagFile)}-pcm.wav");
+                    var currentWavADPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(vagFile)}{ADPCM_SUFFIX}.wav");
+
+                    p.StartInfo.FileName = $@"{TOOLS_PATH}/vgmstream/test.exe";
+                    p.StartInfo.Arguments = $"-o \"{currentWavPCMPath}\" \"{vagFile}\"";
+                    p.StartInfo.UseShellExecute = false;
+                    p.StartInfo.RedirectStandardInput = false;
+                    p.Start();
+                    p.WaitForExit();
+
+                    // Convert WAV PCM into WAV MS-ADPCM
+                    //p.StartInfo.FileName = $@"{TOOLS_PATH}/adpcmencode/adpcmencode3.exe";
+                    //p.StartInfo.Arguments = $"-b 32 \"{currentWavPCMPath}\" \"{currentWavADPCMPath}\"";
+                    //p.StartInfo.UseShellExecute = false;
+                    //p.StartInfo.RedirectStandardInput = false;
+                    //p.Start();
+                    //p.WaitForExit();
+                }
+            }
+
+            return;
 
             p.Close();
 
@@ -106,7 +142,7 @@ namespace SCDEncoder
 
             Console.WriteLine($"Converted {Path.GetFileName(inputFile)} into {Path.GetFileName(outputFile)}. (output: {outputFile})");
 
-            Directory.Delete(tmpFolder, true);
+            //Directory.Delete(tmpFolder, true);
         }
 
         private static void CreateSCD(string wavFilePath, string outputFile)
