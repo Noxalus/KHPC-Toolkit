@@ -53,26 +53,6 @@ namespace SCDEncoder
             return encoding.GetString(data, 0, terminatorIndex < 0 ? maxLength : terminatorIndex);
         }
 
-        #region Helpers
-
-        public static int Align(int offset, int alignment)
-        {
-            var misalignment = offset % alignment;
-            return misalignment > 0 ? alignment - misalignment : offset;
-        }
-
-        public static long Align(long offset, int alignment)
-        {
-            var misalignment = offset % alignment;
-            return misalignment > 0 ? offset + alignment - misalignment : offset;
-        }
-
-        public static void Align(ref byte[] data, int alignment)
-        {
-            var padding = Align(data.Length, alignment);
-            Array.Resize(ref data, data.Length + padding);
-        }
-
-        #endregion
+        public static T AlignPosition<T>(this T stream, int alignValue) where T : Stream => stream.SetPosition(stream.Position + Helpers.Align(stream.Position, alignValue));
     }
 }

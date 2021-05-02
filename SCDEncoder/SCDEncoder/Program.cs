@@ -20,19 +20,6 @@ namespace SCDEncoder
 
         static void Main(string[] args)
         {
-            var scd = new SCD(File.OpenRead(@"F:\KH2FM\SCD\dc10201sr.win32.scd"));
-            //var scd2 = new SCD(File.OpenRead(@"F:\KH\Audio\SCD\KH1\ew_sora.win32.scd"));
-
-            var test = new byte[16];
-            var random = new Random();
-
-            for (int i = 0; i < test.Length; i++)
-            {
-                test[i] = (byte)random.Next(0, 255);
-            }
-
-            StreamExtensions.Align(ref test, 0x10);
-
             if (args.Length > 0)
             {
                 var inputFile = args[0];
@@ -186,11 +173,11 @@ namespace SCDEncoder
             if (!string.IsNullOrEmpty(originalScd))
             {
                 var scd = new SCD(File.OpenRead(originalScd));
-                var scdHeaderData = scd.ExtractHeader();
 
-                var streamTotalSize = scd.StreamsData.Sum(streamData => streamData.Data.Length);
-                var streamHeadersSize = 32 * scd.StreamsData.Count;
-                var scdHeaderSize = scd.Data.Length - streamTotalSize - streamHeadersSize;
+                //var scdHeaderData = scd.ExtractHeader();
+                //var streamTotalSize = scd.StreamsData.Sum(streamData => streamData.Data.Length);
+                //var streamHeadersSize = 32 * scd.StreamsData.Count;
+                //var scdHeaderSize = scd.Data.Length - streamTotalSize - streamHeadersSize;
 
                 if (scd.StreamsData.Count != wavFiles.Count)
                 {
@@ -205,6 +192,8 @@ namespace SCDEncoder
                 foreach (var wavFile in wavFiles)
                 {
                     var wavContent = StripWavHeader(File.ReadAllBytes(wavFile));
+                    Helpers.Align(ref wavContent, 0x10);
+
                     wavesContent.Add(wavContent);
                 }
 
@@ -242,15 +231,14 @@ namespace SCDEncoder
                     BinaryMapping.WriteObject(writer, scdTableOffsetsHeader);
 
                     // Write original data from current position to the table 1 offset (before to write all streams offets)
-                    //var data = scd.Data.SubArray((int)writer.Position, (int)(scdTableOffsetsHeader.Table1Offset - writer.Position));
-                    //writer.Write(data);
-
-                    // TODO: Remove this
-                    var data = scd.Data.SubArray((int)writer.Position, (int)(scd.StreamsData[0].Offset - writer.Position));
+                    var data = scd.Data.SubArray((int)writer.Position, (int)(scdTableOffsetsHeader.Table1Offset - writer.Position));
                     writer.Write(data);
 
+                    // TODO: Remove this
+                    //var data = scd.Data.SubArray((int)writer.Position, (int)(scd.StreamsData[0].Offset - writer.Position));
+                    //writer.Write(data);
+
                     // Write stream entries offset
-                    /*
                     var streamOffset = (uint)scd.StreamsData[0].Offset;
                     var streamHeaderSize = 32;
                     var streamsOffsets = new List<uint>();
@@ -262,14 +250,12 @@ namespace SCDEncoder
 
                         streamsOffsets.Add(streamOffset);
 
-                        streamOffset += (uint)(wavContent.Length + (i + 1) * streamHeaderSize);
+                        streamOffset += (uint)(wavContent.Length + (streamHeaderSize + scd.StreamsData[i].ExtraData.Length));
                     }
 
                     // Write the original data from current stream position to the start of the first stream header
                     data = scd.Data.SubArray((int)writer.Position, (int)(streamsOffsets[0] - writer.Position));
-
                     writer.Write(data);
-                    */
 
                     // Write data for each stream entry
                     for (int i = 0; i < scd.StreamsData.Count; i++)
@@ -290,42 +276,43 @@ namespace SCDEncoder
                         newStreamHeader.SampleRate = (uint)waveFileInfo.WaveFormat.SampleRate;
                         newStreamHeader.StreamSize = (uint)wavContent.Length;
 
-                        //BinaryMapping.WriteObject(writer, newStreamHeader);
-                        //writer.Write(wavContent);
+                        BinaryMapping.WriteObject(writer, newStreamHeader);
+                        writer.Write(streamData.ExtraData);
+                        writer.Write(wavContent);
 
                         // TODO: Remove this
-                        if (i == scd.StreamsData.Count - 1)
-                        {
-                            BinaryMapping.WriteObject(writer, newStreamHeader);
-                            writer.Write(wavContent);
-                            //writer.Write(wavContent.SubArray(0, (int)streamData.Data.Length));
-                        }
-                        else
-                        {
-                            BinaryMapping.WriteObject(writer, streamData.Header);
-                            writer.Write(streamData.Data);
+                        //if (i == scd.StreamsData.Count - 1)
+                        //{
+                        //    BinaryMapping.WriteObject(writer, newStreamHeader);
+                        //    writer.Write(wavContent);
+                        //    //writer.Write(wavContent.SubArray(0, (int)streamData.Data.Length));
+                        //}
+                        //else
+                        //{
+                        //    BinaryMapping.WriteObject(writer, streamData.Header);
+                        //    writer.Write(streamData.Data);
 
-                            //writer.Write(wavContent);
-                            //writer.Write(new byte[streamData.Data.Length - wavContent.Length]);
-                        }
+                        //    //writer.Write(wavContent);
+                        //    //writer.Write(new byte[streamData.Data.Length - wavContent.Length]);
+                        //}
 
-                        byte[] padding;
+                        //byte[] padding;
 
-                        if (i < scd.StreamsData.Count - 1)
-                        {
-                            var size = (int)(scd.StreamsData[i + 1].Offset - writer.Position);
-                            var originalData = scd.Data.SubArray((int)writer.Position, size);
-                            Console.WriteLine($"Compare {size} with {scd.StreamsData[i].Data.Length % 64}");
+                        //if (i < scd.StreamsData.Count - 1)
+                        //{
+                        //    var size = (int)(scd.StreamsData[i + 1].Offset - writer.Position);
+                        //    var originalData = scd.Data.SubArray((int)writer.Position, size);
+                        //    Console.WriteLine($"Compare {size} with {scd.StreamsData[i].Data.Length % 64}");
 
-                            padding = new byte[size];
-                        }
-                        else
-                        {
-                            var size = (int)(scd.Data.Length - writer.Position);
-                            padding = new byte[size];
-                        }
+                        //    padding = new byte[size];
+                        //}
+                        //else
+                        //{
+                        //    var size = (int)(scd.Data.Length - writer.Position);
+                        //    padding = new byte[size];
+                        //}
 
-                        writer.Write(padding);
+                        //writer.Write(padding);
 
                         waveFileInfo.Close();
                     }
@@ -436,6 +423,7 @@ namespace SCDEncoder
         {
             public StreamHeader Header;
             public byte[] Data;
+            public byte[] ExtraData;
             public long Offset;
         }
 
@@ -474,6 +462,14 @@ namespace SCDEncoder
 
             _tableOffsetHeader = BinaryMapping.ReadObject<SCDTableOffsetHeader>(stream);
 
+            if (_tableOffsetHeader.Padding != 0)
+            {
+                throw new Exception("Padding is not null!");
+            }
+
+            // size = 16 when 1 element, 192 with 36 elements, what is it?
+            var unknown = stream.ReadBytes(_tableOffsetHeader.Table0Offset - stream.Position);
+
             stream.Seek(_tableOffsetHeader.Table0Offset, SeekOrigin.Begin);
 
             // Warning: Table0ElementCount has the wrong number of elements
@@ -483,11 +479,8 @@ namespace SCDEncoder
                 namesOffsets.Add(stream.ReadUInt32());
             }
 
-            var test = stream.ReadBytes((int)(_tableOffsetHeader.Table1Offset - stream.Position));
-
-            // Aligned with 16 bytes
-
-            stream.Seek(_tableOffsetHeader.Table1Offset, SeekOrigin.Begin);
+            stream.AlignPosition(0x10);
+            //stream.Seek(_tableOffsetHeader.Table1Offset, SeekOrigin.Begin);
 
             var streamOffsets = new List<uint>();
             for (int i = 0; i < _tableOffsetHeader.Table1ElementCount; i++)
@@ -495,7 +488,8 @@ namespace SCDEncoder
                 streamOffsets.Add(stream.ReadUInt32());
             }
 
-            stream.Seek(_tableOffsetHeader.Table2Offset, SeekOrigin.Begin);
+            stream.AlignPosition(0x10);
+            //stream.Seek(_tableOffsetHeader.Table2Offset, SeekOrigin.Begin);
 
             var unknownOffsets = new List<uint>();
             for (int i = 0; i < _tableOffsetHeader.Table2ElementCount; i++)
@@ -503,81 +497,50 @@ namespace SCDEncoder
                 unknownOffsets.Add(stream.ReadUInt32());
             }
 
+            stream.AlignPosition(0x10);
+
             for (int i = 0; i < streamOffsets.Count; i++)
             {
                 uint streamOffset = streamOffsets[i];
 
-                //Console.WriteLine($"Alignement 0x10 {streamOffset % 0x10}");
-                //Console.WriteLine($"Alignement 0x20 {streamOffset % 0x20}");
-                //Console.WriteLine($"Alignement 0x30 {streamOffset % 0x30}");
-
-                //if (i > 0)
-                //{
-                //    stream.Seek(streamOffsets[i - 1] + _streamsData[i - 1].Data.Length, SeekOrigin.Begin);
-
-                //    var padding1 = BinaryMapping.ReadObject<StreamPadding>(stream);
-                //    //var padding1 = stream.ReadBytes((int)(diff - (diff - 50)));
-
-                //    var padding2 = stream.ReadBytes((int)diff - 50);
-                //}
-
                 stream.Seek(streamOffset, SeekOrigin.Begin);
 
-                var streamData = new StreamData();
+                var header = BinaryMapping.ReadObject<StreamHeader>(stream);
 
-                streamData.Header = BinaryMapping.ReadObject<StreamHeader>(stream);
-
-                //Skip any aux chunks
+                // Skip any aux chunks
                 int chunkStartPosition = (int)stream.Position;
                 int chunkEndPos = chunkStartPosition;
-                for (int j = 0; j < streamData.Header.AuxChunkCount; j++)
+                for (int j = 0; j < header.AuxChunkCount; j++)
                 {
                     stream.ReadUInt32();
                     chunkEndPos += (int)stream.ReadUInt32();
                     stream.Seek(chunkEndPos, SeekOrigin.Begin);
                 }
 
-                var extraData = stream.ReadBytes((int)streamData.Header.ExtraDataSize);
+                var extraData = stream.ReadBytes((int)header.ExtraDataSize);
+                var data = stream.ReadBytes((int)header.StreamSize);
 
-                streamData.Data = stream.ReadBytes((int)streamData.Header.StreamSize);
-                streamData.Offset = streamOffset;
+                var nextOffset = i == streamOffsets.Count - 1 ? stream.Length : streamOffsets[i + 1];
+                var padding = stream.ReadBytes((int)(nextOffset - stream.Position));
 
-                stream.Seek(stream.Length - 34, SeekOrigin.Begin);
-
-                var padding = stream.ReadBytes((int)(stream.Length - stream.Position));
-
-                if (i < streamOffsets.Count - 1)
+                // Check there is no data in the padding
+                if (!Helpers.IsPadding(padding))
                 {
-                    var diff = streamOffsets[i + 1] - stream.Position;
-                    Console.WriteLine($"Diff: {diff} | Modulo: {stream.Position % 0x10} | Diff modulo: {diff - (stream.Position % 0x10)}");
+                    throw new Exception("Padding is not null!");
                 }
 
-                // Aligned on 16/32/48 bytes?
+                var streamData = new StreamData
+                {
+                    Header = header,
+                    Data = data,
+                    ExtraData = extraData,
+                    Offset = streamOffset
+                };
 
                 _streamsData.Add(streamData); 
             }
 
-
             _data = stream.ReadAllBytes();
-
-            //for (int i = 1; i < namesOffsets.Count; i++)
-            //{
-            //    Console.WriteLine($"Diff: {namesOffsets[i] - namesOffsets[i - 1]}");
-            //}
-
-            //for (int i = 1; i < streamOffsets.Count; i++)
-            //{
-            //    Console.WriteLine($"Diff: {streamOffsets[i] - streamOffsets[i - 1] - _streamsData[i - 1].Data.Length}");
-            //}
-
-            //for (int i = 1; i < unknownOffsets.Count; i++)
-            //{
-            //    Console.WriteLine($"Diff: {unknownOffsets[i] - unknownOffsets[i - 1]}");
-            //}
-
-
-            var totalStreamSize = _streamsData.Sum(data => data.Data.Length);
-            var add = streamOffsets[0] + totalStreamSize + (32 * _streamsData.Count);
 
             stream.Close();
         }
