@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using Xe.BinaryMapper;
 
 namespace SCDEncoder
 {
@@ -19,6 +20,19 @@ namespace SCDEncoder
 
         static void Main(string[] args)
         {
+            var scd = new SCD(File.OpenRead(@"F:\KH2FM\SCD\dc10201sr.win32.scd"));
+            //var scd2 = new SCD(File.OpenRead(@"F:\KH\Audio\SCD\KH1\ew_sora.win32.scd"));
+
+            var test = new byte[16];
+            var random = new Random();
+
+            for (int i = 0; i < test.Length; i++)
+            {
+                test[i] = (byte)random.Next(0, 255);
+            }
+
+            StreamExtensions.Align(ref test, 0x10);
+
             if (args.Length > 0)
             {
                 var inputFile = args[0];
@@ -167,87 +181,172 @@ namespace SCDEncoder
 #endif
         }
 
-        private struct Wav
-        {
-            public int SampleRate;
-            public int BlockAlign;
-            public int Channels;
-            public string Name;
-            public byte[] Data;
-        }
-
         private static void CreateSCD(List<string> wavFiles, string outputFile, string originalScd = null)
         {
-            var wavData = new List<Wav>();
-
-            foreach (var wavFile in wavFiles)
+            if (!string.IsNullOrEmpty(originalScd))
             {
-                var wavContent = StripWavHeader(File.ReadAllBytes(wavFile));
-                var waveFileInfo = new WaveFileReader(wavFile);
+                var scd = new SCD(File.OpenRead(originalScd));
+                var scdHeaderData = scd.ExtractHeader();
 
-                var wavDataEntry = new Wav()
+                var streamTotalSize = scd.StreamsData.Sum(streamData => streamData.Data.Length);
+                var streamHeadersSize = 32 * scd.StreamsData.Count;
+                var scdHeaderSize = scd.Data.Length - streamTotalSize - streamHeadersSize;
+
+                if (scd.StreamsData.Count != wavFiles.Count)
                 {
-                    SampleRate = waveFileInfo.WaveFormat.SampleRate,
-                    BlockAlign = waveFileInfo.BlockAlign,
-                    Channels = waveFileInfo.WaveFormat.Channels,
-                    Name = Path.GetFileNameWithoutExtension(wavFile).Replace(ADPCM_SUFFIX, ""),
-                    Data = wavContent,
-                };
+                    throw new Exception(
+                        "The streams count in the original SCD and the the WAV count doesn't match, " +
+                        "please make sure the original SCD you specified correspond to the VSB/WAVs you specified."
+                    );
+                }
 
-                waveFileInfo.Close();
+                var wavesContent = new List<byte[]>();
 
-                wavData.Add(wavDataEntry);
-            }
-
-            var scdHeader = string.IsNullOrEmpty(originalScd) ? File.ReadAllBytes(DUMMY_SCD_HEADER_FILE) : ExtractScdHeader(originalScd);
-            var totalWavDataLenght = wavData.Sum(wav => wav.Data.Length);
-            var finalScd = new byte[scdHeader.Length + totalWavDataLenght];
-            Array.Copy(scdHeader, finalScd, scdHeader.Length);
-
-            using (var writer = new BinaryWriter(new MemoryStream(scdHeader)))
-            {
-                foreach (var wav in wavData)
+                foreach (var wavFile in wavFiles)
                 {
-                    var totalFileSize = scdHeader.Length + wav.Data.Length;
+                    var wavContent = StripWavHeader(File.ReadAllBytes(wavFile));
+                    wavesContent.Add(wavContent);
+                }
 
-                    // Total file size
-                    writer.BaseStream.Position = 0x10;
-                    writer.Write(totalFileSize);
+                using (var writer = new MemoryStream())
+                {
+                    // Write SCD Header
+                    var scdHeader = new SCD.SCDHeader()
+                    {
+                        FileVersion = scd.Header.FileVersion,
+                        BigEndianFlag = scd.Header.BigEndianFlag,
+                        MagicCode = scd.Header.MagicCode,
+                        SSCFVersion = scd.Header.SSCFVersion,
+                        Padding = scd.Header.Padding,
+                        HeaderSize = scd.Header.HeaderSize,
+                        TotalFileSize = scd.Header.TotalFileSize  //(uint)(scd.Header.HeaderSize + wavesContent.Sum(content => content.Length))
+                    };
 
-                    // Stream name
-                    //writer.BaseStream.Position = 0x150;
-                    //writer.Write(Encoding.UTF8.GetBytes(streamName));
+                    BinaryMapping.WriteObject(writer, scdHeader);
 
-                    // Audio data size
-                    writer.BaseStream.Position = 0x250;
-                    writer.Write(wav.Data.Length);
+                    // Write Table offsets header
+                    var scdTableOffsetsHeader = new SCD.SCDTableOffsetHeader()
+                    {
+                        Table0ElementCount = scd.TableOffsetHeader.Table0ElementCount,
+                        Table0Offset = scd.TableOffsetHeader.Table0Offset,
+                        Table1ElementCount = scd.TableOffsetHeader.Table1ElementCount,
+                        Table1Offset = scd.TableOffsetHeader.Table1Offset,
+                        Table2ElementCount = scd.TableOffsetHeader.Table2ElementCount,
+                        Table2Offset = scd.TableOffsetHeader.Table2Offset,
+                        Unk06 = scd.TableOffsetHeader.Unk06,
+                        Unk14 = scd.TableOffsetHeader.Unk14,
+                        Unk18 = scd.TableOffsetHeader.Unk18,
+                        Padding = scd.TableOffsetHeader.Padding,
+                    };
 
-                    // Channel count
-                    writer.BaseStream.Position = 0x254;
-                    writer.Write((uint)wav.Channels);
+                    BinaryMapping.WriteObject(writer, scdTableOffsetsHeader);
 
-                    // Sample rate
-                    writer.BaseStream.Position = 0x258;
-                    writer.Write((uint)wav.SampleRate);
+                    // Write original data from current position to the table 1 offset (before to write all streams offets)
+                    //var data = scd.Data.SubArray((int)writer.Position, (int)(scdTableOffsetsHeader.Table1Offset - writer.Position));
+                    //writer.Write(data);
 
-                    // Frame size / Block align
-                    writer.BaseStream.Position = 0x27C;
-                    writer.Write((short)wav.BlockAlign);
+                    // TODO: Remove this
+                    var data = scd.Data.SubArray((int)writer.Position, (int)(scd.StreamsData[0].Offset - writer.Position));
+                    writer.Write(data);
 
-                    // TODO: Update table offsets!
+                    // Write stream entries offset
+                    /*
+                    var streamOffset = (uint)scd.StreamsData[0].Offset;
+                    var streamHeaderSize = 32;
+                    var streamsOffsets = new List<uint>();
 
-                    // TODO: This is not correct
-                    Array.Copy(wav.Data, 0, finalScd, scdHeader.Length, totalWavDataLenght);
+                    for (int i = 0; i < wavesContent.Count; i++)
+                    {
+                        var wavContent = wavesContent[i];
+                        writer.Write(BitConverter.GetBytes(streamOffset));
+
+                        streamsOffsets.Add(streamOffset);
+
+                        streamOffset += (uint)(wavContent.Length + (i + 1) * streamHeaderSize);
+                    }
+
+                    // Write the original data from current stream position to the start of the first stream header
+                    data = scd.Data.SubArray((int)writer.Position, (int)(streamsOffsets[0] - writer.Position));
+
+                    writer.Write(data);
+                    */
+
+                    // Write data for each stream entry
+                    for (int i = 0; i < scd.StreamsData.Count; i++)
+                    {
+                        var streamData = scd.StreamsData[i];
+                        var wavFile = wavFiles[i];
+                        var wavContent = wavesContent[i];
+
+                        var waveFileInfo = new WaveFileReader(wavFile);
+
+                        var newStreamHeader = new SCD.StreamHeader();
+                        newStreamHeader.AuxChunkCount = streamData.Header.AuxChunkCount;
+                        newStreamHeader.ChannelCount = (uint)waveFileInfo.WaveFormat.Channels;
+                        newStreamHeader.Codec = streamData.Header.Codec;
+                        newStreamHeader.ExtraDataSize = streamData.Header.ExtraDataSize;
+                        newStreamHeader.LoopStart = streamData.Header.LoopStart;
+                        newStreamHeader.LoopEnd = streamData.Header.LoopEnd;
+                        newStreamHeader.SampleRate = (uint)waveFileInfo.WaveFormat.SampleRate;
+                        newStreamHeader.StreamSize = (uint)wavContent.Length;
+
+                        //BinaryMapping.WriteObject(writer, newStreamHeader);
+                        //writer.Write(wavContent);
+
+                        // TODO: Remove this
+                        if (i == scd.StreamsData.Count - 1)
+                        {
+                            BinaryMapping.WriteObject(writer, newStreamHeader);
+                            writer.Write(wavContent);
+                            //writer.Write(wavContent.SubArray(0, (int)streamData.Data.Length));
+                        }
+                        else
+                        {
+                            BinaryMapping.WriteObject(writer, streamData.Header);
+                            writer.Write(streamData.Data);
+
+                            //writer.Write(wavContent);
+                            //writer.Write(new byte[streamData.Data.Length - wavContent.Length]);
+                        }
+
+                        byte[] padding;
+
+                        if (i < scd.StreamsData.Count - 1)
+                        {
+                            var size = (int)(scd.StreamsData[i + 1].Offset - writer.Position);
+                            var originalData = scd.Data.SubArray((int)writer.Position, size);
+                            Console.WriteLine($"Compare {size} with {scd.StreamsData[i].Data.Length % 64}");
+
+                            padding = new byte[size];
+                        }
+                        else
+                        {
+                            var size = (int)(scd.Data.Length - writer.Position);
+                            padding = new byte[size];
+                        }
+
+                        writer.Write(padding);
+
+                        waveFileInfo.Close();
+                    }
+
+                    //data = scd.Data.SubArray((int)writer.Position, (int)(scd.Data.Length - writer.Position));
+                    //writer.Write(data);
+
+                    File.WriteAllBytes(outputFile, writer.ReadAllBytes());
+
+                    var newScd = new SCD(File.OpenRead(outputFile));
                 }
             }
+            else
+            {
+                if (wavFiles.Count > 1)
+                {
+                    throw new Exception("You need to pass an original SCD file to create a new SCD from multiple WAV files.");
+                }
 
-            File.WriteAllBytes(outputFile, finalScd);
-        }
-
-        private static byte[] ExtractScdHeader(string originalScd)
-        {
-            // TODO: Implement this
-            return new byte[0];
+                var scdHeader = File.ReadAllBytes(DUMMY_SCD_HEADER_FILE);
+            }
         }
 
         private static byte[] StripWavHeader(byte[] wavData)
@@ -284,6 +383,225 @@ namespace SCDEncoder
             }
 
             return -1;
+        }
+    }
+
+    public class SCD
+    {
+        private const UInt64 MAGIC_CODE = 0x4643535342444553;
+        private const byte SSCF_VERSION = 0x4;
+
+        public class SCDHeader
+        {
+            [Data] public UInt64 MagicCode { get; set; }
+            [Data] public uint FileVersion { get; set; }
+            [Data] public byte BigEndianFlag { get; set; }
+            [Data] public byte SSCFVersion { get; set; }
+            [Data] public ushort HeaderSize { get; set; }
+            [Data] public uint TotalFileSize { get; set; }
+            [Data(Count = 7)] public uint[] Padding { get; set; }
+        }
+
+        // Table0 has the offsets of the name entries
+        // Table1 has the offsets to the sound entries
+        // Table2 has ???
+        public class SCDTableOffsetHeader
+        {
+            [Data] public ushort Table0ElementCount { get; set; }
+            [Data] public ushort Table1ElementCount { get; set; }
+            [Data] public ushort Table2ElementCount { get; set; }
+            [Data] public ushort Unk06 { get; set; }
+            [Data] public uint Table0Offset { get; set; }
+            [Data] public uint Table1Offset { get; set; }
+            [Data] public uint Table2Offset { get; set; }
+            [Data] public uint Unk14 { get; set; }
+            [Data] public uint Unk18 { get; set; }
+            [Data] public uint Padding { get; set; }
+        }
+
+        public class StreamHeader
+        {
+            [Data] public uint StreamSize { get; set; }
+            [Data] public uint ChannelCount { get; set; } // 1: Mono, 2: Stereo
+            [Data] public uint SampleRate { get; set; }
+            [Data] public uint Codec { get; set; } // 0x0C: MS-ADPCM, 0x06: OGG
+            [Data] public uint LoopStart { get; set; }
+            [Data] public uint LoopEnd { get; set; }
+            [Data] public uint ExtraDataSize { get; set; } // Also known as "first frame position". Add to after header for first frame.
+            [Data] public ushort AuxChunkCount { get; set; }
+            [Data] public ushort Unknown { get; set; }
+        }
+
+        public struct StreamData
+        {
+            public StreamHeader Header;
+            public byte[] Data;
+            public long Offset;
+        }
+
+        public class StreamPadding
+        {
+            [Data] public ushort Unknown1 { get; set; }
+            [Data] public ushort Unknown2 { get; set; }
+            [Data] public ushort Unknown3 { get; set; }
+            [Data] public byte Unknown4 { get; set; }
+            [Data] public byte Unknown5 { get; set; }
+        }
+
+        private SCDHeader _header = new SCDHeader();
+        private SCDTableOffsetHeader _tableOffsetHeader = new SCDTableOffsetHeader();
+        private List<StreamData> _streamsData = new List<StreamData>();
+        private byte[] _data;
+
+        public SCDHeader Header => _header;
+        public SCDTableOffsetHeader TableOffsetHeader => _tableOffsetHeader;
+        public List<StreamData> StreamsData => _streamsData;
+        public byte[] Data => _data;
+
+        public SCD(Stream stream)
+        {
+            _header = BinaryMapping.ReadObject<SCDHeader>(stream);
+
+            if (_header.MagicCode != MAGIC_CODE)
+            {
+                throw new Exception("Magic code not found, invalid SCD file.");
+            }
+
+            if (_header.SSCFVersion != SSCF_VERSION)
+            {
+                throw new Exception("Wrong SSCF version, invalid SCD file.");
+            }
+
+            _tableOffsetHeader = BinaryMapping.ReadObject<SCDTableOffsetHeader>(stream);
+
+            stream.Seek(_tableOffsetHeader.Table0Offset, SeekOrigin.Begin);
+
+            // Warning: Table0ElementCount has the wrong number of elements
+            var namesOffsets = new List<uint>();
+            for (int i = 0; i < _tableOffsetHeader.Table1ElementCount; i++)
+            {
+                namesOffsets.Add(stream.ReadUInt32());
+            }
+
+            var test = stream.ReadBytes((int)(_tableOffsetHeader.Table1Offset - stream.Position));
+
+            // Aligned with 16 bytes
+
+            stream.Seek(_tableOffsetHeader.Table1Offset, SeekOrigin.Begin);
+
+            var streamOffsets = new List<uint>();
+            for (int i = 0; i < _tableOffsetHeader.Table1ElementCount; i++)
+            {
+                streamOffsets.Add(stream.ReadUInt32());
+            }
+
+            stream.Seek(_tableOffsetHeader.Table2Offset, SeekOrigin.Begin);
+
+            var unknownOffsets = new List<uint>();
+            for (int i = 0; i < _tableOffsetHeader.Table2ElementCount; i++)
+            {
+                unknownOffsets.Add(stream.ReadUInt32());
+            }
+
+            for (int i = 0; i < streamOffsets.Count; i++)
+            {
+                uint streamOffset = streamOffsets[i];
+
+                //Console.WriteLine($"Alignement 0x10 {streamOffset % 0x10}");
+                //Console.WriteLine($"Alignement 0x20 {streamOffset % 0x20}");
+                //Console.WriteLine($"Alignement 0x30 {streamOffset % 0x30}");
+
+                //if (i > 0)
+                //{
+                //    stream.Seek(streamOffsets[i - 1] + _streamsData[i - 1].Data.Length, SeekOrigin.Begin);
+
+                //    var padding1 = BinaryMapping.ReadObject<StreamPadding>(stream);
+                //    //var padding1 = stream.ReadBytes((int)(diff - (diff - 50)));
+
+                //    var padding2 = stream.ReadBytes((int)diff - 50);
+                //}
+
+                stream.Seek(streamOffset, SeekOrigin.Begin);
+
+                var streamData = new StreamData();
+
+                streamData.Header = BinaryMapping.ReadObject<StreamHeader>(stream);
+
+                //Skip any aux chunks
+                int chunkStartPosition = (int)stream.Position;
+                int chunkEndPos = chunkStartPosition;
+                for (int j = 0; j < streamData.Header.AuxChunkCount; j++)
+                {
+                    stream.ReadUInt32();
+                    chunkEndPos += (int)stream.ReadUInt32();
+                    stream.Seek(chunkEndPos, SeekOrigin.Begin);
+                }
+
+                var extraData = stream.ReadBytes((int)streamData.Header.ExtraDataSize);
+
+                streamData.Data = stream.ReadBytes((int)streamData.Header.StreamSize);
+                streamData.Offset = streamOffset;
+
+                stream.Seek(stream.Length - 34, SeekOrigin.Begin);
+
+                var padding = stream.ReadBytes((int)(stream.Length - stream.Position));
+
+                if (i < streamOffsets.Count - 1)
+                {
+                    var diff = streamOffsets[i + 1] - stream.Position;
+                    Console.WriteLine($"Diff: {diff} | Modulo: {stream.Position % 0x10} | Diff modulo: {diff - (stream.Position % 0x10)}");
+                }
+
+                // Aligned on 16/32/48 bytes?
+
+                _streamsData.Add(streamData); 
+            }
+
+
+            _data = stream.ReadAllBytes();
+
+            //for (int i = 1; i < namesOffsets.Count; i++)
+            //{
+            //    Console.WriteLine($"Diff: {namesOffsets[i] - namesOffsets[i - 1]}");
+            //}
+
+            //for (int i = 1; i < streamOffsets.Count; i++)
+            //{
+            //    Console.WriteLine($"Diff: {streamOffsets[i] - streamOffsets[i - 1] - _streamsData[i - 1].Data.Length}");
+            //}
+
+            //for (int i = 1; i < unknownOffsets.Count; i++)
+            //{
+            //    Console.WriteLine($"Diff: {unknownOffsets[i] - unknownOffsets[i - 1]}");
+            //}
+
+
+            var totalStreamSize = _streamsData.Sum(data => data.Data.Length);
+            var add = streamOffsets[0] + totalStreamSize + (32 * _streamsData.Count);
+
+            stream.Close();
+        }
+
+        public byte[] ExtractHeader()
+        {
+            for (int i = 1; i < _streamsData.Count; i++)
+            {
+                var diff = (_streamsData[i].Offset - _streamsData[i - 1].Data.Length) - _streamsData[i - 1].Offset;
+                Console.WriteLine(diff);
+            }
+
+            var size = (int)_header.TotalFileSize - _streamsData.Sum(stream => stream.Data.Length);
+            return _data.SubArray(0, (int)_streamsData[0].Offset);
+        }
+    }
+
+    public static class Extensions
+    {
+        public static T[] SubArray<T>(this T[] array, int offset, int length)
+        {
+            T[] result = new T[length];
+            Array.Copy(array, offset, result, 0, length);
+            return result;
         }
     }
 }
