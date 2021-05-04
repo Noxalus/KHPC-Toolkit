@@ -46,6 +46,14 @@ namespace SCDEncoder
                 return *(uint*)ptr;
         }
 
+        unsafe public static ushort ReadUShort(this Stream stream)
+        {
+            var buffer = new byte[2];
+            stream.Read(buffer, 0, 2);
+            fixed (byte* ptr = buffer)
+                return *(ushort*)ptr;
+        }
+
         public static string ReadString(this Stream stream, int maxLength, Encoding encoding)
         {
             var data = stream.ReadBytes(maxLength);

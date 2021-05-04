@@ -27,28 +27,54 @@ namespace SCDEncoder
         // Table0 has the offsets of the name entries
         // Table1 has the offsets to the sound entries
         // Table2 has ???
-        public class SCDTableOffsetHeader
+        public class SCDTableHeader
         {
             [Data] public ushort Table0ElementCount { get; set; }
             [Data] public ushort Table1ElementCount { get; set; }
             [Data] public ushort Table2ElementCount { get; set; }
-            [Data] public ushort Unk06 { get; set; }
-            [Data] public uint Table0Offset { get; set; }
+            [Data] public ushort Table3ElementCount { get; set; }
             [Data] public uint Table1Offset { get; set; }
             [Data] public uint Table2Offset { get; set; }
-            [Data] public uint Unk14 { get; set; }
-            [Data] public uint Unk18 { get; set; } // Offset of the end of the table offset header?
+            [Data] public uint Table3Offset { get; set; }
+            [Data] public uint Unk14 { get; set; } // Always null?
+            [Data] public uint Table4Offset { get; set; }
             [Data] public uint Padding { get; set; }
         }
 
         public class StreamName
         {
+            [Data] public ushort Unknown01_1 { get; set; }
+            [Data] public ushort Unknown01_2 { get; set; }
+            [Data] public ushort Unknown02_1 { get; set; }
+            [Data] public ushort Unknown02_2 { get; set; }
+            [Data] public ushort Unknown03_1 { get; set; }
+            [Data] public ushort Unknown03_2 { get; set; }
+            [Data] public uint Index { get; set; }
+            [Data] public uint Unknown05 { get; set; }
+            [Data] public uint Unknown06 { get; set; }
+            [Data] public uint Unknown07 { get; set; }
+            [Data] public uint Unknown08 { get; set; }
+            [Data] public ushort Unknown09_1 { get; set; }
+            [Data] public ushort Unknown09_2 { get; set; }
+            [Data] public uint Unknown10 { get; set; }
+            [Data] public uint Unknown11 { get; set; }
+            [Data] public uint Unknown12 { get; set; }
+            [Data(Count = 20)] public string Name { get; set; }
+        }
+
+        public class Table1Data
+        {
             [Data(Count = 88)] public byte[] Unknown { get; set; }
         }
 
-        public class StreamUnknown
+        public class Table3Data
         {
             [Data(Count = 128)] public byte[] Unknown { get; set; }
+        }
+
+        public class Table4Data
+        {
+            [Data(Count = 124)] public byte[] Unknown { get; set; }
         }
 
         public class StreamHeader
@@ -73,17 +99,20 @@ namespace SCDEncoder
         }
 
         private SCDHeader _header = new SCDHeader();
-        private SCDTableOffsetHeader _tableOffsetHeader = new SCDTableOffsetHeader();
+        private SCDTableHeader _tablesHeader = new SCDTableHeader();
+        private List<StreamName> _streamsNames = new List<StreamName>();
         private List<StreamData> _streamsData = new List<StreamData>();
         private byte[] _data;
 
         public SCDHeader Header => _header;
-        public SCDTableOffsetHeader TableOffsetHeader => _tableOffsetHeader;
+        public SCDTableHeader TablesHeader => _tablesHeader;
+        public List<StreamName> StreamsNames => _streamsNames;
         public List<StreamData> StreamsData => _streamsData;
         public byte[] Data => _data;
 
         public SCD(Stream stream)
         {
+            // Read base SCD header
             _header = BinaryMapping.ReadObject<SCDHeader>(stream);
 
             if (_header.MagicCode != MAGIC_CODE)
@@ -96,72 +125,140 @@ namespace SCDEncoder
                 throw new Exception("Wrong SSCF version, invalid SCD file.");
             }
 
-            _tableOffsetHeader = BinaryMapping.ReadObject<SCDTableOffsetHeader>(stream);
+            // Read tables offsets
+            _tablesHeader = BinaryMapping.ReadObject<SCDTableHeader>(stream);
 
-            if (_tableOffsetHeader.Padding != 0)
+            if (_tablesHeader.Padding != 0)
             {
                 throw new Exception("Padding is not null!");
             }
 
-            // size = 16 when 1 element, 192 with 36 elements, what is it?
-            var unknown = stream.ReadBytes(_tableOffsetHeader.Table0Offset - stream.Position);
+            // Table 0 => stream names
+            var table0Offsets = new List<uint>();
+            var table1Offsets = new List<uint>();
+            // Table 2 => stream data
+            var table2Offsets = new List<uint>();
+            var table3Offsets = new List<uint>();
+            var table4Offsets = new List<uint>();
 
-            stream.Seek(_tableOffsetHeader.Table0Offset, SeekOrigin.Begin);
-
-            // Warning: Table0ElementCount has the wrong number of elements
-            var namesOffsets = new List<uint>();
-            for (int i = 0; i < _tableOffsetHeader.Table1ElementCount; i++)
+            // Table 0 offsets
+            for (int i = 0; i < _tablesHeader.Table0ElementCount; i++)
             {
-                namesOffsets.Add(stream.ReadUInt32());
-            }
-
-            stream.AlignPosition(0x10);
-            //stream.Seek(_tableOffsetHeader.Table1Offset, SeekOrigin.Begin);
-
-            var streamOffsets = new List<uint>();
-            for (int i = 0; i < _tableOffsetHeader.Table1ElementCount; i++)
-            {
-                streamOffsets.Add(stream.ReadUInt32());
-            }
-
-            stream.AlignPosition(0x10);
-            //stream.Seek(_tableOffsetHeader.Table2Offset, SeekOrigin.Begin);
-
-            var unknownOffsets = new List<uint>();
-            for (int i = 0; i < _tableOffsetHeader.Table2ElementCount; i++)
-            {
-                unknownOffsets.Add(stream.ReadUInt32());
+                table0Offsets.Add(stream.ReadUInt32());
             }
 
             stream.AlignPosition(0x10);
 
-            var streamNames = new List<StreamName>();
-
-            for (int i = 0; i < namesOffsets.Count; i++)
+            if (stream.Position != _tablesHeader.Table1Offset)
             {
-                uint nameOffset = namesOffsets[i];
-                stream.Seek(nameOffset, SeekOrigin.Begin);
+                throw new Exception("Wrong stream position!");
+            }
+
+            // Table 1 offsets
+            for (int i = 0; i < _tablesHeader.Table1ElementCount; i++)
+            {
+                table1Offsets.Add(stream.ReadUInt32());
+            }
+
+            stream.AlignPosition(0x10);
+
+            if (stream.Position != _tablesHeader.Table2Offset)
+            {
+                throw new Exception("Wrong stream position!");
+            }
+
+            // Table 2 offsets
+            for (int i = 0; i < _tablesHeader.Table2ElementCount; i++)
+            {
+                table2Offsets.Add(stream.ReadUInt32());
+            }
+
+            stream.AlignPosition(0x10);
+
+            if (stream.Position != _tablesHeader.Table3Offset)
+            {
+                throw new Exception("Wrong stream position!");
+            }
+
+            // Table 3 offsets
+            // TODO: Understand what are the 3 last offsets
+            for (int i = 0; i < (_tablesHeader.Table3ElementCount / 2) - 3; i++)
+            {
+                table3Offsets.Add(stream.ReadUInt32());
+            }
+
+            stream.AlignPosition(0x10);
+
+            var table4ElementCount = (_tablesHeader.Table3ElementCount / 2) - table3Offsets.Count - 1;
+
+            // Table 4 offsets
+            for (int i = 0; i < table4ElementCount; i++)
+            {
+                table4Offsets.Add(stream.ReadUInt32());
+            }
+
+            stream.AlignPosition(0x10);
+
+            // Table 3 data => ???
+            var table3Data = new List<Table3Data>();
+
+            for (int i = 0; i < table3Offsets.Count; i++)
+            {
+                if (stream.Position != table3Offsets[i])
+                {
+                    throw new Exception("Wrong stream position!");
+                }
+
+                var data = BinaryMapping.ReadObject<Table3Data>(stream);
+
+                table3Data.Add(data);
+            }
+
+            // Table 0 data => Stream names
+            for (int i = 0; i < table0Offsets.Count; i++)
+            {
+                if (stream.Position != table0Offsets[i])
+                {
+                    Console.WriteLine($"Diff: {table0Offsets[i] - stream.Position}");
+                    stream.Seek(table0Offsets[i], SeekOrigin.Begin);
+                    //throw new Exception("Wrong stream position!");
+                }
 
                 var streamName = BinaryMapping.ReadObject<StreamName>(stream);
-
-                streamNames.Add(streamName);
+                _streamsNames.Add(streamName);
             }
 
-            var streamUnknowns = new List<StreamUnknown>();
-
-            for (int i = 0; i < unknownOffsets.Count; i++)
+            // Table 1 data => ???
+            var table1Data = new List<Table1Data>();
+            for (int i = 0; i < table1Offsets.Count; i++)
             {
-                uint unknownOffset = unknownOffsets[i];
-                stream.Seek(unknownOffset, SeekOrigin.Begin);
+                if (stream.Position != table1Offsets[i])
+                {
+                    throw new Exception("Wrong stream position!");
+                }
 
-                var streamUnknown = BinaryMapping.ReadObject<StreamUnknown>(stream);
-
-                streamUnknowns.Add(streamUnknown);
+                var data = BinaryMapping.ReadObject<Table1Data>(stream);
+                table1Data.Add(data);
             }
 
-            for (int i = 0; i < streamOffsets.Count; i++)
+            var table4Data = new List<Table4Data>();
+            for (int i = 0; i < table4Offsets.Count; i++)
             {
-                uint streamOffset = streamOffsets[i];
+                if (stream.Position != table4Offsets[i])
+                {
+                    throw new Exception("Wrong stream position!");
+                }
+
+                var data = BinaryMapping.ReadObject<Table4Data>(stream);
+                table4Data.Add(data);
+            }
+
+            stream.AlignPosition(0x10);
+
+            // Stream Data
+            for (int i = 0; i < table2Offsets.Count; i++)
+            {
+                uint streamOffset = table2Offsets[i];
 
                 stream.Seek(streamOffset, SeekOrigin.Begin);
 
@@ -180,7 +277,7 @@ namespace SCDEncoder
                 var extraData = stream.ReadBytes((int)header.ExtraDataSize);
                 var data = stream.ReadBytes((int)header.StreamSize);
 
-                var nextOffset = i == streamOffsets.Count - 1 ? stream.Length : streamOffsets[i + 1];
+                var nextOffset = i == table2Offsets.Count - 1 ? stream.Length : table2Offsets[i + 1];
                 var padding = stream.ReadBytes((int)(nextOffset - stream.Position));
 
                 // Check there is no data in the padding
@@ -199,8 +296,6 @@ namespace SCDEncoder
 
                 _streamsData.Add(streamData);
             }
-
-            var totalStreamSize = _streamsData.Sum(streamData => streamData.Data.Length);
 
             _data = stream.ReadAllBytes();
 

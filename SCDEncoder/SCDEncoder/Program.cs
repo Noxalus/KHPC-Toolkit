@@ -228,24 +228,24 @@ namespace SCDEncoder
                     BinaryMapping.WriteObject(writer, scdHeader);
 
                     // Write Table offsets header
-                    var scdTableOffsetsHeader = new SCD.SCDTableOffsetHeader()
+                    var scdTableOffsetsHeader = new SCD.SCDTableHeader()
                     {
-                        Table0ElementCount = scd.TableOffsetHeader.Table0ElementCount,
-                        Table0Offset = scd.TableOffsetHeader.Table0Offset,
-                        Table1ElementCount = scd.TableOffsetHeader.Table1ElementCount,
-                        Table1Offset = scd.TableOffsetHeader.Table1Offset,
-                        Table2ElementCount = scd.TableOffsetHeader.Table2ElementCount,
-                        Table2Offset = scd.TableOffsetHeader.Table2Offset,
-                        Unk06 = scd.TableOffsetHeader.Unk06,
-                        Unk14 = scd.TableOffsetHeader.Unk14,
-                        Unk18 = scd.TableOffsetHeader.Unk18,
-                        Padding = scd.TableOffsetHeader.Padding,
+                        Table0ElementCount = scd.TablesHeader.Table0ElementCount,
+                        Table1ElementCount = scd.TablesHeader.Table1ElementCount,
+                        Table2ElementCount = scd.TablesHeader.Table2ElementCount,
+                        Table3ElementCount = scd.TablesHeader.Table3ElementCount,
+                        Table1Offset = scd.TablesHeader.Table1Offset,
+                        Table2Offset = scd.TablesHeader.Table2Offset,
+                        Table3Offset = scd.TablesHeader.Table3Offset,
+                        Table4Offset = scd.TablesHeader.Table4Offset,
+                        Unk14 = scd.TablesHeader.Unk14,
+                        Padding = scd.TablesHeader.Padding,
                     };
 
                     BinaryMapping.WriteObject(writer, scdTableOffsetsHeader);
 
                     // Write original data from current position to the table 1 offset (before to write all streams offets)
-                    var data = scd.Data.SubArray((int)writer.Position, (int)(scdTableOffsetsHeader.Table1Offset - writer.Position));
+                    var data = scd.Data.SubArray((int)writer.Position, (int)(scdTableOffsetsHeader.Table2Offset - writer.Position));
                     writer.Write(data);
 
                     // Write stream entries offset
