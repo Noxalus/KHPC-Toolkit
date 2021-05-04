@@ -28,9 +28,9 @@ namespace SCDEncoder
 
                 // Check for tools
 
-                if (!File.Exists(@$"{TOOLS_PATH}/iopvoiceext/IOPVOICEExt.exe"))
+                if (!File.Exists(@$"{TOOLS_PATH}/hypercrown/HyperCrown.exe"))
                 {
-                    Console.WriteLine($"Please put IOPVOICEExt.exe in the tools folder: {TOOLS_PATH}/iopvoiceext");
+                    Console.WriteLine($"Please put HyperCrown.exe in the tools folder: {TOOLS_PATH}/hypercrown");
                     return;
                 }
 
@@ -91,7 +91,6 @@ namespace SCDEncoder
                 Directory.Delete(vagOutputFolder, true);
 
             var wavPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(inputFile)}.wav");
-            var wavADPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(inputFile)}{ADPCM_SUFFIX}.wav");
             var scdPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(inputFile)}.scd");
             var outputFile = Path.Combine(outputFolder, $"{Path.GetFileNameWithoutExtension(inputFile)}.win32.scd");
 
@@ -101,20 +100,28 @@ namespace SCDEncoder
             var wavPCMFiles = new List<string>();
             var wavADPCMFiles = new List<string>();
 
-            if (Path.GetExtension(inputFile) == ".vsb")
+            if (Path.GetExtension(inputFile) == ".vsb" || Path.GetExtension(inputFile) == ".vset")
             {
-                // Convert VSB into VAG files
-                p.StartInfo.FileName = $@"{TOOLS_PATH}/iopvoiceext/IOPVOICEExt.exe";
+                // Convert VSB/VSET into VAG files
+                p.StartInfo.FileName = $@"{TOOLS_PATH}/hypercrown/HyperCrown.exe";
+                p.StartInfo.Arguments = $"-b \"{inputFile}\"";
                 p.StartInfo.UseShellExecute = false;
                 p.StartInfo.RedirectStandardInput = true;
                 p.Start();
 
-                p.StandardInput.WriteLine(inputFile);
                 p.StandardInput.WriteLine(" ");
+                p.WaitForExit(500);
+                p.Kill(true);
 
-                p.WaitForExit();
+                var outputFiles = Directory.GetFiles(Path.GetDirectoryName(AppContext.BaseDirectory), "*.vag");
 
-                vagFiles.AddRange(Directory.GetFiles(vagOutputFolder, "*.vag"));
+                foreach (var vagFile in outputFiles)
+                {
+                    var movedVagFile = Path.Combine(tmpFolder, Path.GetFileName(vagFile).Replace("_f", ""));
+                    File.Move(vagFile, movedVagFile, true);
+
+                    vagFiles.Add(movedVagFile);
+                }
             }
             else if (Path.GetExtension(inputFile) == ".vag")
             {
@@ -130,8 +137,8 @@ namespace SCDEncoder
             {
                 foreach (var vagFile in vagFiles)
                 {
-                    var currentWavPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(vagFile)}-pcm.wav");
-                    var currentWavPCM48Path = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(vagFile)}-pcm-48.wav");
+                    var currentWavPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(vagFile)}@pcm.wav");
+                    var currentWavPCM48Path = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(vagFile)}@pcm-48.wav");
 
                     p.StartInfo.FileName = $@"{TOOLS_PATH}/vgmstream/test.exe";
                     p.StartInfo.Arguments = $"-o \"{currentWavPCMPath}\" \"{vagFile}\"";
@@ -158,7 +165,7 @@ namespace SCDEncoder
 
             foreach (var wavPCMFile in wavPCMFiles)
             {
-                var currentWavADPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(wavPCMFile)}{ADPCM_SUFFIX}.wav");
+                var currentWavADPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(wavPCMFile).Split("@")[0]}.wav");
 
                 // Convert WAV PCM into WAV MS-ADPCM
                 p.StartInfo.FileName = $@"{TOOLS_PATH}/adpcmencode/adpcmencode3.exe";
@@ -192,6 +199,28 @@ namespace SCDEncoder
             {
                 var scd = new SCD(File.OpenRead(originalScd));
 
+                var orderedWavFiles = new SortedList<int, string>();
+
+                for (int i = 0; i < scd.StreamsNames.Count; i++)
+                {
+                    SCD.StreamName name = scd.StreamsNames[i];
+                    if (!string.IsNullOrEmpty(name.Name))
+                    {
+                        var index = wavFiles.FindIndex(n => Path.GetFileNameWithoutExtension(n).Equals(name.Name));
+
+                        if (index != -1)
+                        {
+                            Console.WriteLine($"{name.Name} => {index}");
+                            orderedWavFiles.Add(i, wavFiles[index]);
+                        }
+                    }
+                }
+
+                if (orderedWavFiles.Count != wavFiles.Count)
+                {
+                    throw new Exception("Some stream names haven't been found!");
+                }
+
                 if (scd.StreamsData.Count != wavFiles.Count)
                 {
                     throw new Exception(
@@ -202,9 +231,9 @@ namespace SCDEncoder
 
                 var wavesContent = new List<byte[]>();
 
-                foreach (var wavFile in wavFiles)
+                foreach (var wavFile in orderedWavFiles)
                 {
-                    var wavContent = Helpers.StripWavHeader(File.ReadAllBytes(wavFile));
+                    var wavContent = Helpers.StripWavHeader(File.ReadAllBytes(wavFile.Value));
                     Helpers.Align(ref wavContent, 0x10);
 
                     wavesContent.Add(wavContent);
