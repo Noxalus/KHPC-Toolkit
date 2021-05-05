@@ -19,7 +19,7 @@ namespace SCDEncoder
         private const string TMP_FOLDER_NAME = "tmp";
 
         // Used to store the mapping between stream names and track index and make sure the output SCD has the track in the proper order
-        private static Dictionary<string, Dictionary<string, int>> _streamsMapping = new Dictionary<string, Dictionary<string, int>>();
+        private static Dictionary<string, Dictionary<int, int>> _streamsMapping = new Dictionary<string, Dictionary<int, int>>();
 
         static void Main(string[] args)
         {
@@ -58,7 +58,7 @@ namespace SCDEncoder
                 foreach (var file in Directory.GetFiles(RESOURCES_PATH, "*.json"))
                 {
                     var content = File.ReadAllText(file);
-                    var data = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<string, int>>>(content);
+                    var data = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<int, int>>>(content);
 
                     foreach (var key in data.Keys)
                     {
@@ -198,7 +198,7 @@ namespace SCDEncoder
 
             p.Close();
 
-            var mapping = new Dictionary<string, int>();
+            var mapping = new Dictionary<int, int>();
 
             if (_streamsMapping.ContainsKey(filename))
             {
@@ -220,7 +220,7 @@ namespace SCDEncoder
 #endif
         }
 
-        private static void CreateSCD(List<string> wavFiles, string outputFile, string originalScd = null, Dictionary<string, int> mapping = null)
+        private static void CreateSCD(List<string> wavFiles, string outputFile, string originalScd = null, Dictionary<int, int> mapping = null)
         {
             if (!string.IsNullOrEmpty(originalScd))
             {
@@ -230,22 +230,9 @@ namespace SCDEncoder
 
                 if (mapping != null)
                 {
-                    for (int i = 0; i < scd.StreamsNames.Count; i++)
+                    foreach (var key in mapping.Keys)
                     {
-                        SCD.StreamName name = scd.StreamsNames[i];
-                        if (!string.IsNullOrEmpty(name.Name))
-                        {
-                            if (mapping.ContainsKey(name.Name))
-                            {
-                                //Console.WriteLine($"{i} => {mapping[name.Name]}");
-                                var index = wavFiles.FindIndex(n => Path.GetFileNameWithoutExtension(n).Equals(name.Name));
-                                orderedWavFiles.Add(mapping[name.Name], wavFiles[index]);
-                            }
-                        }
-                        else
-                        {
-                            Console.WriteLine($"{i} is empty");
-                        }
+                        orderedWavFiles.Add(key, wavFiles[mapping[key]]);
                     }
                 }
                 else
