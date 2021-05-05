@@ -6,54 +6,69 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Xe.BinaryMapper;
+using Newtonsoft.Json;
 
 namespace SCDEncoder
 {
     class Program
     {
         private static readonly string TOOLS_PATH = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), "tools");
+        private static readonly string RESOURCES_PATH = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), "resources");
         private static readonly string DUMMY_SCD_HEADER_FILE = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), "scd/header.scd");
 
         private const string TMP_FOLDER_NAME = "tmp";
-        private const string VAG_OUT_FOLDER_NAME = "out";
-        private const string ADPCM_SUFFIX = "-adpcm";
+
+        // Used to store the mapping between stream names and track index and make sure the output SCD has the track in the proper order
+        private static Dictionary<string, Dictionary<string, int>> _streamsMapping = new Dictionary<string, Dictionary<string, int>>();
 
         static void Main(string[] args)
         {
+            // Check for tools
+
+            if (!File.Exists(@$"{TOOLS_PATH}/hypercrown/HyperCrown.exe"))
+            {
+                Console.WriteLine($"Please put HyperCrown.exe in the tools folder: {TOOLS_PATH}/hypercrown");
+                return;
+            }
+
+            if (!File.Exists(@$"{TOOLS_PATH}/vgmstream/test.exe"))
+            {
+                Console.WriteLine($"Please put test.exe in the tools folder: {TOOLS_PATH}/vgmstream");
+                Console.WriteLine("You can find it here: https://vgmstream.org/downloads");
+                return;
+            }
+
+            if (!File.Exists(@$"{TOOLS_PATH}/adpcmencode/adpcmencode3.exe"))
+            {
+                Console.WriteLine($"Please put adpcmencode3.exe in the tools folder: {TOOLS_PATH}/adpcmencode");
+                Console.WriteLine("You can find it in the Windows 10 SDK: https://developer.microsoft.com/fr-fr/windows/downloads/windows-10-sdk/");
+                return;
+            }
+
+            if (!File.Exists(@$"{TOOLS_PATH}/sox/sox.exe"))
+            {
+                Console.WriteLine($"Please put sox.exe in the tools folder: {TOOLS_PATH}/sox");
+                Console.WriteLine("You can find it here: https://sourceforge.net/projects/sox/files/sox/");
+                return;
+            }
+
             if (args.Length > 0)
             {
+                // Parse JSON files in the resources folder to get streams index mapping
+                foreach (var file in Directory.GetFiles(RESOURCES_PATH, "*.json"))
+                {
+                    var content = File.ReadAllText(file);
+                    var data = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<string, int>>>(content);
+
+                    foreach (var key in data.Keys)
+                    {
+                        _streamsMapping[key] = data[key];
+                    }
+                }
+
                 var inputFile = args[0];
                 var outputFolder = args.Length > 1 ? args[1] : "output";
                 var originalScdFile = args.Length > 2 ? args[2] : null;
-
-                // Check for tools
-
-                if (!File.Exists(@$"{TOOLS_PATH}/hypercrown/HyperCrown.exe"))
-                {
-                    Console.WriteLine($"Please put HyperCrown.exe in the tools folder: {TOOLS_PATH}/hypercrown");
-                    return;
-                }
-
-                if (!File.Exists(@$"{TOOLS_PATH}/vgmstream/test.exe"))
-                {
-                    Console.WriteLine($"Please put test.exe in the tools folder: {TOOLS_PATH}/vgmstream");
-                    Console.WriteLine("You can find it here: https://vgmstream.org/downloads");
-                    return;
-                }
-
-                if (!File.Exists(@$"{TOOLS_PATH}/adpcmencode/adpcmencode3.exe"))
-                {
-                    Console.WriteLine($"Please put adpcmencode3.exe in the tools folder: {TOOLS_PATH}/adpcmencode");
-                    Console.WriteLine("You can find it in the Windows 10 SDK: https://developer.microsoft.com/fr-fr/windows/downloads/windows-10-sdk/");
-                    return;
-                }
-
-                if (!File.Exists(@$"{TOOLS_PATH}/sox/sox.exe"))
-                {
-                    Console.WriteLine($"Please put sox.exe in the tools folder: {TOOLS_PATH}/sox");
-                    Console.WriteLine("You can find it here: https://sourceforge.net/projects/sox/files/sox/");
-                    return;
-                }
 
                 FileAttributes attr = File.GetAttributes(args[0]);
                 if (attr.HasFlag(FileAttributes.Directory))
@@ -79,20 +94,23 @@ namespace SCDEncoder
 
         private static void ConvertFile(string inputFile, string outputFolder, string originalScd = null)
         {
+            var filename = Path.GetFileName(inputFile);
+            var filenameWithoutExtension = Path.GetFileNameWithoutExtension(inputFile);
+            var fileExtension = Path.GetExtension(inputFile);
+
+            // TODO: Make sure to preserve hierarchy
+            //outputFolder = Path.Combine(outputFolder, Directory.GetParent(inputFile));
+
             var tmpFolder = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), TMP_FOLDER_NAME);
-            var vagOutputFolder = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), VAG_OUT_FOLDER_NAME);
 
             if (!Directory.Exists(tmpFolder))
                 Directory.CreateDirectory(tmpFolder);
             if (!Directory.Exists(outputFolder))
                 Directory.CreateDirectory(outputFolder);
 
-            if (Directory.Exists(vagOutputFolder))
-                Directory.Delete(vagOutputFolder, true);
-
-            var wavPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(inputFile)}.wav");
-            var scdPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(inputFile)}.scd");
-            var outputFile = Path.Combine(outputFolder, $"{Path.GetFileNameWithoutExtension(inputFile)}.win32.scd");
+            var wavPCMPath = Path.Combine(tmpFolder, $"{filenameWithoutExtension}.wav");
+            var scdPath = Path.Combine(tmpFolder, $"{filenameWithoutExtension}.scd");
+            var outputFile = Path.Combine(outputFolder, $"{filenameWithoutExtension}.win32.scd");
 
             var p = new Process();
 
@@ -100,7 +118,7 @@ namespace SCDEncoder
             var wavPCMFiles = new List<string>();
             var wavADPCMFiles = new List<string>();
 
-            if (Path.GetExtension(inputFile) == ".vsb" || Path.GetExtension(inputFile) == ".vset")
+            if (fileExtension == ".vsb" || fileExtension == ".vset")
             {
                 // Convert VSB/VSET into VAG files
                 p.StartInfo.FileName = $@"{TOOLS_PATH}/hypercrown/HyperCrown.exe";
@@ -123,7 +141,7 @@ namespace SCDEncoder
                     vagFiles.Add(movedVagFile);
                 }
             }
-            else if (Path.GetExtension(inputFile) == ".vag")
+            else if (fileExtension == ".vag")
             {
                 vagFiles.Add(inputFile);
             }
@@ -180,7 +198,18 @@ namespace SCDEncoder
 
             p.Close();
 
-            CreateSCD(wavADPCMFiles, scdPath, originalScd);
+            var mapping = new Dictionary<string, int>();
+
+            if (_streamsMapping.ContainsKey(filename))
+            {
+                mapping = _streamsMapping[filename];
+            }
+            else
+            {
+                Console.WriteLine($"Warning: no mapping found for file {filename}");
+            }
+
+            CreateSCD(wavADPCMFiles, scdPath, originalScd, mapping);
 
             File.Copy(scdPath, outputFile, true);
 
@@ -188,12 +217,10 @@ namespace SCDEncoder
 
 #if RELEASE
             Directory.Delete(tmpFolder, true);
-            // Out folder is created by the tool that extract VAG from VSB files
-            Directory.Delete(vagOutputFolder, true);
 #endif
         }
 
-        private static void CreateSCD(List<string> wavFiles, string outputFile, string originalScd = null)
+        private static void CreateSCD(List<string> wavFiles, string outputFile, string originalScd = null, Dictionary<string, int> mapping = null)
         {
             if (!string.IsNullOrEmpty(originalScd))
             {
@@ -201,18 +228,31 @@ namespace SCDEncoder
 
                 var orderedWavFiles = new SortedList<int, string>();
 
-                for (int i = 0; i < scd.StreamsNames.Count; i++)
+                if (mapping != null)
                 {
-                    SCD.StreamName name = scd.StreamsNames[i];
-                    if (!string.IsNullOrEmpty(name.Name))
+                    for (int i = 0; i < scd.StreamsNames.Count; i++)
                     {
-                        var index = wavFiles.FindIndex(n => Path.GetFileNameWithoutExtension(n).Equals(name.Name));
-
-                        if (index != -1)
+                        SCD.StreamName name = scd.StreamsNames[i];
+                        if (!string.IsNullOrEmpty(name.Name))
                         {
-                            Console.WriteLine($"{name.Name} => {index}");
-                            orderedWavFiles.Add(i, wavFiles[index]);
+                            if (mapping.ContainsKey(name.Name))
+                            {
+                                //Console.WriteLine($"{i} => {mapping[name.Name]}");
+                                var index = wavFiles.FindIndex(n => Path.GetFileNameWithoutExtension(n).Equals(name.Name));
+                                orderedWavFiles.Add(mapping[name.Name], wavFiles[index]);
+                            }
                         }
+                        else
+                        {
+                            Console.WriteLine($"{i} is empty");
+                        }
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < wavFiles.Count; i++)
+                    {
+                        orderedWavFiles.Add(i, wavFiles[i]);
                     }
                 }
 

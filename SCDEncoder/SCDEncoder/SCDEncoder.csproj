@@ -3,7 +3,7 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net5.0</TargetFramework>
-    <Version>0.0.2</Version>
+    <Version>0.1.0</Version>
     <Description>Create Kingdom Hearts PC compatible SCD files from various format including WAV (PCM), VAG, VSET, VSB.</Description>
     <Authors>Noxalus</Authors>
     <Company>Noxalus</Company>
@@ -21,10 +21,20 @@
 
   <ItemGroup>
     <PackageReference Include="NAudio.Core" Version="2.0.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
     <PackageReference Include="Xe.BinaryMapper" Version="1.5.2" />
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="resources\kh1fm_mapping.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="resources\kh2fm_mapping.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="resources\khfm_mapping.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Update="scd\header.scd">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
