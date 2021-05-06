@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using Xe.BinaryMapper;
 using Newtonsoft.Json;
+using VAGExtractor;
 
 namespace SCDEncoder
 {
@@ -24,12 +25,6 @@ namespace SCDEncoder
         static void Main(string[] args)
         {
             // Check for tools
-
-            if (!File.Exists(@$"{TOOLS_PATH}/hypercrown/HyperCrown.exe"))
-            {
-                Console.WriteLine($"Please put HyperCrown.exe in the tools folder: {TOOLS_PATH}/hypercrown");
-                return;
-            }
 
             if (!File.Exists(@$"{TOOLS_PATH}/vgmstream/test.exe"))
             {
@@ -103,6 +98,8 @@ namespace SCDEncoder
 
             var tmpFolder = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), TMP_FOLDER_NAME);
 
+            Directory.Delete(tmpFolder, true);
+
             if (!Directory.Exists(tmpFolder))
                 Directory.CreateDirectory(tmpFolder);
             if (!Directory.Exists(outputFolder))
@@ -118,24 +115,18 @@ namespace SCDEncoder
             var wavPCMFiles = new List<string>();
             var wavADPCMFiles = new List<string>();
 
-            if (fileExtension == ".vsb" || fileExtension == ".vset")
+            if (fileExtension == ".vsb" || 
+                fileExtension == ".vset" ||
+                fileExtension == ".mdls" ||
+                fileExtension == ".dat")
             {
-                // Convert VSB/VSET into VAG files
-                p.StartInfo.FileName = $@"{TOOLS_PATH}/hypercrown/HyperCrown.exe";
-                p.StartInfo.Arguments = $"-b \"{inputFile}\"";
-                p.StartInfo.UseShellExecute = false;
-                p.StartInfo.RedirectStandardInput = true;
-                p.Start();
+                VAGExtractor.VAGTools.ExtractVAGFiles(inputFile, tmpFolder, true);
 
-                p.StandardInput.WriteLine(" ");
-                p.WaitForExit(500);
-                p.Kill(true);
-
-                var outputFiles = Directory.GetFiles(Path.GetDirectoryName(AppContext.BaseDirectory), "*.vag");
+                var outputFiles = Directory.GetFiles(tmpFolder, "*.vag");
 
                 foreach (var vagFile in outputFiles)
                 {
-                    var movedVagFile = Path.Combine(tmpFolder, Path.GetFileName(vagFile).Replace("_f", ""));
+                    var movedVagFile = Path.Combine(Directory.GetParent(vagFile).FullName, Path.GetFileName(vagFile).Replace("_f", ""));
                     File.Move(vagFile, movedVagFile, true);
 
                     vagFiles.Add(movedVagFile);

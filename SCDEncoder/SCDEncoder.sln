@@ -4,6 +4,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 16.0.31112.23
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SCDEncoder", "SCDEncoder\SCDEncoder.csproj", "{17F30DC8-E2B5-4EFC-BD3B-3CA8F595484B}"
+	ProjectSection(ProjectDependencies) = postProject
+		{42BD6425-1C9C-456F-8FC6-21F3A92FFECE} = {42BD6425-1C9C-456F-8FC6-21F3A92FFECE}
+	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VAGExtractor", "VAGExtractor\VAGExtractor.csproj", "{42BD6425-1C9C-456F-8FC6-21F3A92FFECE}"
 EndProject

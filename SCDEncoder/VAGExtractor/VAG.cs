@@ -57,6 +57,8 @@ namespace VAGExtractor
 
             _mapper.WriteObject<VAGHeader>(fileStream, _header);
             fileStream.Write(_audioData);
+
+            fileStream.Close();
         }
     }
 }
