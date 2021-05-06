@@ -51,9 +51,9 @@ namespace VAGExtractor
             }
         }
 
-        public void Export(string outputPath)
+        public void Export(string outputPath, string filename = null)
         {
-            var fileStream = File.Create(Path.Combine(outputPath, $"{_header.Name}.vag"));
+            var fileStream = File.Create(Path.Combine(outputPath, $"{(filename != null ? filename : Name)}.vag"));
 
             _mapper.WriteObject<VAGHeader>(fileStream, _header);
             fileStream.Write(_audioData);

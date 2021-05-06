@@ -14,6 +14,7 @@ namespace VAGExtractor
             {
                 var inputFile = args[0];
                 var outputFolder = args.Length > 1 ? args[1] : "output";
+                var keepName = args.Length > 2;
 
                 if (!Directory.Exists(outputFolder))
                     Directory.CreateDirectory(outputFolder);
@@ -22,15 +23,16 @@ namespace VAGExtractor
                 var inputStream = File.OpenRead(inputFile);
                 var foundOffsets = SearchPatterns(inputData, "VAGp");
 
-                foreach (var offset in foundOffsets)
+                for (int i = 0; i < foundOffsets.Count; i++)
                 {
+                    int offset = foundOffsets[i];
                     inputStream.Seek(offset, SeekOrigin.Begin);
 
                     var vag = new VAG(inputStream);
 
-                    Console.WriteLine($"{vag.Name}");
+                    Console.WriteLine($"{i} => {vag.Name}");
                     
-                    vag.Export(outputFolder);
+                    vag.Export(outputFolder, keepName ? null : i.ToString());
                 }
             }
             else
