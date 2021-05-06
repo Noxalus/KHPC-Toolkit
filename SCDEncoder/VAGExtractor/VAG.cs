@@ -51,14 +51,22 @@ namespace VAGExtractor
             }
         }
 
-        public void Export(string outputPath, string filename = null)
+        public string Export(string outputPath, string newFilename = null, bool removeSuffix = true)
         {
-            var fileStream = File.Create(Path.Combine(outputPath, $"{(filename != null ? filename : Name)}.vag"));
+            var filename = $"{(newFilename != null ? newFilename : Name)}.vag";
+
+            if (removeSuffix)
+                filename = filename.Replace("_f", "");
+
+            var filePath = Path.Combine(outputPath, filename);
+            var fileStream = File.Create(filePath);
 
             _mapper.WriteObject<VAGHeader>(fileStream, _header);
             fileStream.Write(_audioData);
 
             fileStream.Close();
+
+            return filePath;
         }
     }
 }

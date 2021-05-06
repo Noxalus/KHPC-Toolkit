@@ -22,7 +22,9 @@ namespace SCDEncoder
         // Used to store the mapping between stream names and track index and make sure the output SCD has the track in the proper order
         private static Dictionary<string, Dictionary<int, int>> _streamsMapping = new Dictionary<string, Dictionary<int, int>>();
 
-        static void Main(string[] args)
+        private static List<string> SUPPORTED_EXTENSIONS = new List<string>() { ".vsb", /*".vset", ".mdls", /*".dat"*/ };
+
+        private static void Main(string[] args)
         {
             // Check for tools
 
@@ -61,7 +63,7 @@ namespace SCDEncoder
                     }
                 }
 
-                var inputFile = args[0];
+                var input = args[0];
                 var outputFolder = args[1];
                 var originalScdFile = args[2];
 
@@ -70,14 +72,20 @@ namespace SCDEncoder
                 {
                     var directory = new DirectoryInfo(args[0]);
                     outputFolder = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), outputFolder, directory.Name);
-                    foreach (var file in Directory.GetFiles(args[0], "*"))
+
+                    string[] allfiles = Directory.GetFiles(input, "*.*", SearchOption.AllDirectories);
+
+                    foreach (var file in allfiles)
                     {
-                        ConvertFile(file, outputFolder, originalScdFile);
+                        if (SUPPORTED_EXTENSIONS.Contains(Path.GetExtension(file)))
+                        {
+                            ConvertFile(file, input, outputFolder, originalScdFile);
+                        }
                     }
                 }
                 else
                 {
-                    ConvertFile(args[0], outputFolder, originalScdFile);
+                    ConvertFile(input, Directory.GetParent(input).FullName, outputFolder, originalScdFile);
                 }
             }
             else
@@ -87,21 +95,43 @@ namespace SCDEncoder
             }
         }
 
-        private static void ConvertFile(string inputFile, string outputFolder, string originalScd)
+        private static void ConvertFile(string inputFile, string inputFolder, string outputFolder, string originalScd)
         {
             var filename = Path.GetFileName(inputFile);
             var filenameWithoutExtension = Path.GetFileNameWithoutExtension(inputFile);
             var fileExtension = Path.GetExtension(inputFile);
 
-            // TODO: Make sure to preserve hierarchy
-            //outputFolder = Path.Combine(outputFolder, Directory.GetParent(inputFile));
+            // Make sure to preserve hierarchy
+            var rootFolder = Directory.GetParent(inputFile).FullName;
+            var relativePath = rootFolder.Replace(inputFolder, "");
+            outputFolder = Path.Combine(outputFolder, inputFolder, relativePath).Replace("\\", "/");
 
             var tmpFolder = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), TMP_FOLDER_NAME);
 
-            Directory.Delete(tmpFolder, true);
+            if (Directory.Exists(tmpFolder))
+                Directory.Delete(tmpFolder, true);
 
-            if (!Directory.Exists(tmpFolder))
-                Directory.CreateDirectory(tmpFolder);
+            Console.WriteLine($"Convert {filename}");
+
+            if (filename == "voice001.vset")
+            {
+                return;
+            }
+
+            var vagFiles = VAGExtractor.VAGTools.ExtractVAGFiles(inputFile, tmpFolder, true, true);
+
+            if (vagFiles.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var file in vagFiles)
+            {
+                Console.WriteLine($"\t{Path.Combine(relativePath, Path.GetFileName(file))}");
+            }
+
+            Directory.CreateDirectory(tmpFolder);
+            
             if (!Directory.Exists(outputFolder))
                 Directory.CreateDirectory(outputFolder);
 
@@ -111,35 +141,8 @@ namespace SCDEncoder
 
             var p = new Process();
 
-            var vagFiles = new List<string>();
             var wavPCMFiles = new List<string>();
             var wavADPCMFiles = new List<string>();
-
-            if (fileExtension == ".vsb" || 
-                fileExtension == ".vset" ||
-                fileExtension == ".mdls" ||
-                fileExtension == ".dat")
-            {
-                VAGExtractor.VAGTools.ExtractVAGFiles(inputFile, tmpFolder, true);
-
-                var outputFiles = Directory.GetFiles(tmpFolder, "*.vag");
-
-                foreach (var vagFile in outputFiles)
-                {
-                    var movedVagFile = Path.Combine(Directory.GetParent(vagFile).FullName, Path.GetFileName(vagFile).Replace("_f", ""));
-                    File.Move(vagFile, movedVagFile, true);
-
-                    vagFiles.Add(movedVagFile);
-                }
-            }
-            else if (fileExtension == ".vag")
-            {
-                vagFiles.Add(inputFile);
-            }
-            else
-            {
-                File.Copy(inputFile, wavPCMPath, true);
-            }
 
             // Convert VAG to WAV
             if (vagFiles.Count > 0)
