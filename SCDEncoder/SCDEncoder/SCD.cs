@@ -209,7 +209,9 @@ namespace SCDEncoder
             {
                 if (stream.Position != _table3Offsets[i])
                 {
-                    throw new Exception("Wrong stream position!");
+                    Console.WriteLine($"Seek to the proper offset for index {i} of Table 3");
+                    stream.Seek(_table3Offsets[i], SeekOrigin.Begin);
+                    //throw new Exception("Wrong stream position!");
                 }
 
                 var data = BinaryMapping.ReadObject<Table3Data>(stream);
@@ -222,9 +224,8 @@ namespace SCDEncoder
             {
                 if (stream.Position != _table0Offsets[i])
                 {
-                    Console.WriteLine($"Diff: {_table0Offsets[i] - stream.Position}");
+                    // TODO: Understand why when the stream name is null, the size is 4 bytes larger :O
                     stream.Seek(_table0Offsets[i], SeekOrigin.Begin);
-                    //throw new Exception("Wrong stream position!");
                 }
 
                 var streamName = BinaryMapping.ReadObject<StreamName>(stream);
@@ -247,7 +248,9 @@ namespace SCDEncoder
             {
                 if (stream.Position != _table4Offsets[i])
                 {
-                    throw new Exception("Wrong stream position!");
+                    Console.WriteLine($"Seek to the proper offset for index {i} of Table 4");
+                    stream.Seek(_table3Offsets[i], SeekOrigin.Begin);
+                    //throw new Exception("Wrong stream position!");
                 }
 
                 var data = BinaryMapping.ReadObject<Table4Data>(stream);

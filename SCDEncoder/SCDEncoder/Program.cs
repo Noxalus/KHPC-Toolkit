@@ -52,7 +52,7 @@ namespace SCDEncoder
                 return;
             }
 
-            if (args.Length > 0)
+            if (args.Length == 3)
             {
                 // Parse JSON files in the resources folder to get streams index mapping
                 foreach (var file in Directory.GetFiles(RESOURCES_PATH, "*.json"))
@@ -67,8 +67,8 @@ namespace SCDEncoder
                 }
 
                 var inputFile = args[0];
-                var outputFolder = args.Length > 1 ? args[1] : "output";
-                var originalScdFile = args.Length > 2 ? args[2] : null;
+                var outputFolder = args[1];
+                var originalScdFile = args[2];
 
                 FileAttributes attr = File.GetAttributes(args[0]);
                 if (attr.HasFlag(FileAttributes.Directory))
@@ -88,11 +88,11 @@ namespace SCDEncoder
             else
             {
                 Console.WriteLine("Usage:");
-                Console.WriteLine("SCDEncoder <file/dir> [<output dir>]");
+                Console.WriteLine("SCDEncoder <file/dir> [<output dir>] [<original scd file>]");
             }
         }
 
-        private static void ConvertFile(string inputFile, string outputFolder, string originalScd = null)
+        private static void ConvertFile(string inputFile, string outputFolder, string originalScd)
         {
             var filename = Path.GetFileName(inputFile);
             var filenameWithoutExtension = Path.GetFileNameWithoutExtension(inputFile);
@@ -198,7 +198,7 @@ namespace SCDEncoder
 
             p.Close();
 
-            var mapping = new Dictionary<int, int>();
+            Dictionary<int, int> mapping = null;
 
             if (_streamsMapping.ContainsKey(filename))
             {
@@ -220,154 +220,142 @@ namespace SCDEncoder
 #endif
         }
 
-        private static void CreateSCD(List<string> wavFiles, string outputFile, string originalScd = null, Dictionary<int, int> mapping = null)
+        private static void CreateSCD(List<string> wavFiles, string outputFile, string originalScd, Dictionary<int, int> mapping = null)
         {
-            if (!string.IsNullOrEmpty(originalScd))
+            var scd = new SCD(File.OpenRead(originalScd));
+
+            var orderedWavFiles = new SortedList<int, string>();
+
+            if (mapping != null)
             {
-                var scd = new SCD(File.OpenRead(originalScd));
-
-                var orderedWavFiles = new SortedList<int, string>();
-
-                if (mapping != null)
+                foreach (var key in mapping.Keys)
                 {
-                    foreach (var key in mapping.Keys)
-                    {
-                        orderedWavFiles.Add(key, wavFiles[mapping[key]]);
-                    }
-                }
-                else
-                {
-                    for (int i = 0; i < wavFiles.Count; i++)
-                    {
-                        orderedWavFiles.Add(i, wavFiles[i]);
-                    }
-                }
-
-                if (orderedWavFiles.Count != wavFiles.Count)
-                {
-                    throw new Exception("Some stream names haven't been found!");
-                }
-
-                if (scd.StreamsData.Count != wavFiles.Count)
-                {
-                    throw new Exception(
-                        "The streams count in the original SCD and the the WAV count doesn't match, " +
-                        "please make sure the original SCD you specified correspond to the VSB/WAVs you specified."
-                    );
-                }
-
-                var wavesContent = new List<byte[]>();
-
-                foreach (var wavFile in orderedWavFiles)
-                {
-                    var wavContent = Helpers.StripWavHeader(File.ReadAllBytes(wavFile.Value));
-                    Helpers.Align(ref wavContent, 0x10);
-
-                    wavesContent.Add(wavContent);
-                }
-
-                using (var writer = new MemoryStream())
-                {
-                    // Write SCD Header
-                    var scdHeader = new SCD.SCDHeader()
-                    {
-                        FileVersion = scd.Header.FileVersion,
-                        BigEndianFlag = scd.Header.BigEndianFlag,
-                        MagicCode = scd.Header.MagicCode,
-                        SSCFVersion = scd.Header.SSCFVersion,
-                        Padding = scd.Header.Padding,
-                        HeaderSize = scd.Header.HeaderSize,
-                        // TODO: Fix this, it should be new total file size - table 0 offset position (which correspond to the header size?)
-                        TotalFileSize = (uint)wavesContent.Sum(content => content.Length)
-                    };
-
-                    BinaryMapping.WriteObject(writer, scdHeader);
-
-                    // Write Table offsets header
-                    var scdTableOffsetsHeader = new SCD.SCDTableHeader()
-                    {
-                        Table0ElementCount = scd.TablesHeader.Table0ElementCount,
-                        Table1ElementCount = scd.TablesHeader.Table1ElementCount,
-                        Table2ElementCount = scd.TablesHeader.Table2ElementCount,
-                        Table3ElementCount = scd.TablesHeader.Table3ElementCount,
-                        Table1Offset = scd.TablesHeader.Table1Offset,
-                        Table2Offset = scd.TablesHeader.Table2Offset,
-                        Table3Offset = scd.TablesHeader.Table3Offset,
-                        Table4Offset = scd.TablesHeader.Table4Offset,
-                        Unk14 = scd.TablesHeader.Unk14,
-                        Padding = scd.TablesHeader.Padding,
-                    };
-
-                    BinaryMapping.WriteObject(writer, scdTableOffsetsHeader);
-
-                    // Write original data from current position to the table 1 offset (before to write all streams offets)
-                    var data = scd.Data.SubArray((int)writer.Position, (int)(scdTableOffsetsHeader.Table2Offset - writer.Position));
-                    writer.Write(data);
-
-                    // Write stream entries offset
-                    var streamOffset = (uint)scd.StreamsData[0].Offset;
-                    var streamHeaderSize = 32;
-                    var streamsOffsets = new List<uint>();
-
-                    for (int i = 0; i < wavesContent.Count; i++)
-                    {
-                        var wavContent = wavesContent[i];
-                        writer.Write(BitConverter.GetBytes(streamOffset));
-
-                        streamsOffsets.Add(streamOffset);
-
-                        streamOffset += (uint)(wavContent.Length + (streamHeaderSize + scd.StreamsData[i].ExtraData.Length));
-                    }
-
-                    // Write the original data from current stream position to the start of the first stream header
-                    data = scd.Data.SubArray((int)writer.Position, (int)(streamsOffsets[0] - writer.Position));
-                    writer.Write(data);
-
-                    // Write data for each stream entry
-                    for (int i = 0; i < scd.StreamsData.Count; i++)
-                    {
-                        var streamData = scd.StreamsData[i];
-                        var wavFile = wavFiles[i];
-                        var wavContent = wavesContent[i];
-
-                        var waveFileInfo = new WaveFileReader(wavFile);
-
-                        var newStreamHeader = new SCD.StreamHeader
-                        {
-                            AuxChunkCount = streamData.Header.AuxChunkCount,
-                            ChannelCount = (uint)waveFileInfo.WaveFormat.Channels,
-                            Codec = streamData.Header.Codec,
-                            ExtraDataSize = streamData.Header.ExtraDataSize,
-                            LoopStart = streamData.Header.LoopStart,
-                            LoopEnd = streamData.Header.LoopEnd,
-                            SampleRate = (uint)waveFileInfo.WaveFormat.SampleRate,
-                            StreamSize = (uint)wavContent.Length
-                        };
-
-                        // Write stream header
-                        BinaryMapping.WriteObject(writer, newStreamHeader);
-                        // Write stream extra data
-                        writer.Write(streamData.ExtraData);
-                        // Write stream audio data
-                        writer.Write(wavContent);
-
-                        waveFileInfo.Close();
-                    }
-
-                    File.WriteAllBytes(outputFile, writer.ReadAllBytes());
-
-                    // Check the new SCD is correct
-                    var newScd = new SCD(File.OpenRead(outputFile));
+                    orderedWavFiles.Add(key, wavFiles[mapping[key]]);
                 }
             }
             else
             {
-                if (wavFiles.Count > 1)
+                for (int i = 0; i < wavFiles.Count; i++)
                 {
-                    throw new Exception("You need to pass an original SCD file to create a new SCD from multiple WAV files.");
+                    orderedWavFiles.Add(i, wavFiles[i]);
+                }
+            }
+
+            if (orderedWavFiles.Count != wavFiles.Count)
+            {
+                throw new Exception("Some stream names haven't been found!");
+            }
+
+            if (scd.StreamsData.Count != wavFiles.Count)
+            {
+                throw new Exception(
+                    "The streams count in the original SCD and the the WAV count doesn't match, " +
+                    "please make sure the original SCD you specified correspond to the VSB/WAVs you specified."
+                );
+            }
+
+            var wavesContent = new List<byte[]>();
+
+            foreach (var wavFile in orderedWavFiles)
+            {
+                var wavContent = Helpers.StripWavHeader(File.ReadAllBytes(wavFile.Value));
+                Helpers.Align(ref wavContent, 0x10);
+
+                wavesContent.Add(wavContent);
+            }
+
+            using (var writer = new MemoryStream())
+            {
+                // Write SCD Header
+                var scdHeader = new SCD.SCDHeader()
+                {
+                    FileVersion = scd.Header.FileVersion,
+                    BigEndianFlag = scd.Header.BigEndianFlag,
+                    MagicCode = scd.Header.MagicCode,
+                    SSCFVersion = scd.Header.SSCFVersion,
+                    Padding = scd.Header.Padding,
+                    HeaderSize = scd.Header.HeaderSize,
+                    // TODO: Fix this, it should be new total file size - table 0 offset position (which correspond to the header size?)
+                    TotalFileSize = (uint)wavesContent.Sum(content => content.Length)
+                };
+
+                BinaryMapping.WriteObject(writer, scdHeader);
+
+                // Write Table offsets header
+                var scdTableOffsetsHeader = new SCD.SCDTableHeader()
+                {
+                    Table0ElementCount = scd.TablesHeader.Table0ElementCount,
+                    Table1ElementCount = scd.TablesHeader.Table1ElementCount,
+                    Table2ElementCount = scd.TablesHeader.Table2ElementCount,
+                    Table3ElementCount = scd.TablesHeader.Table3ElementCount,
+                    Table1Offset = scd.TablesHeader.Table1Offset,
+                    Table2Offset = scd.TablesHeader.Table2Offset,
+                    Table3Offset = scd.TablesHeader.Table3Offset,
+                    Table4Offset = scd.TablesHeader.Table4Offset,
+                    Unk14 = scd.TablesHeader.Unk14,
+                    Padding = scd.TablesHeader.Padding,
+                };
+
+                BinaryMapping.WriteObject(writer, scdTableOffsetsHeader);
+
+                // Write original data from current position to the table 1 offset (before to write all streams offets)
+                var data = scd.Data.SubArray((int)writer.Position, (int)(scdTableOffsetsHeader.Table2Offset - writer.Position));
+                writer.Write(data);
+
+                // Write stream entries offset
+                var streamOffset = (uint)scd.StreamsData[0].Offset;
+                var streamHeaderSize = 32;
+                var streamsOffsets = new List<uint>();
+
+                for (int i = 0; i < wavesContent.Count; i++)
+                {
+                    var wavContent = wavesContent[i];
+                    writer.Write(BitConverter.GetBytes(streamOffset));
+
+                    streamsOffsets.Add(streamOffset);
+
+                    streamOffset += (uint)(wavContent.Length + (streamHeaderSize + scd.StreamsData[i].ExtraData.Length));
                 }
 
-                var scdHeader = File.ReadAllBytes(DUMMY_SCD_HEADER_FILE);
+                // Write the original data from current stream position to the start of the first stream header
+                data = scd.Data.SubArray((int)writer.Position, (int)(streamsOffsets[0] - writer.Position));
+                writer.Write(data);
+
+                // Write data for each stream entry
+                for (int i = 0; i < scd.StreamsData.Count; i++)
+                {
+                    var streamData = scd.StreamsData[i];
+                    var wavFile = wavFiles[i];
+                    var wavContent = wavesContent[i];
+
+                    var waveFileInfo = new WaveFileReader(wavFile);
+
+                    var newStreamHeader = new SCD.StreamHeader
+                    {
+                        AuxChunkCount = streamData.Header.AuxChunkCount,
+                        ChannelCount = (uint)waveFileInfo.WaveFormat.Channels,
+                        Codec = streamData.Header.Codec,
+                        ExtraDataSize = streamData.Header.ExtraDataSize,
+                        LoopStart = streamData.Header.LoopStart,
+                        LoopEnd = streamData.Header.LoopEnd,
+                        SampleRate = (uint)waveFileInfo.WaveFormat.SampleRate,
+                        StreamSize = (uint)wavContent.Length
+                    };
+
+                    // Write stream header
+                    BinaryMapping.WriteObject(writer, newStreamHeader);
+                    // Write stream extra data
+                    writer.Write(streamData.ExtraData);
+                    // Write stream audio data
+                    writer.Write(wavContent);
+
+                    waveFileInfo.Close();
+                }
+
+                File.WriteAllBytes(outputFile, writer.ReadAllBytes());
+
+                // Check the new SCD is correct
+                var newScd = new SCD(File.OpenRead(outputFile));
             }
         }
     }
