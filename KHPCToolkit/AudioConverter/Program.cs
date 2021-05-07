@@ -46,18 +46,22 @@ namespace AudioConverter
                     foreach (var file in allPS2files)
                     {
                         var filename = Path.GetFileName(file);
+                        var extension = Path.GetExtension(file);
 
-                        if (SUPPORTED_EXTENSIONS.Contains(Path.GetExtension(file)) && !EXCLUDED_FILES.Contains(filename))
+                        if (SUPPORTED_EXTENSIONS.Contains(extension) && !EXCLUDED_FILES.Contains(filename))
                         {
                             Dictionary<int, int> mapping = null;
 
-                            if (_streamsMapping.ContainsKey(filename))
+                            if (extension == ".vsb")
                             {
-                                mapping = _streamsMapping[filename];
-                            }
-                            else
-                            {
-                                Console.WriteLine($"Warning: no mapping found for file {filename}");
+                                if (_streamsMapping.ContainsKey(filename))
+                                {
+                                    mapping = _streamsMapping[filename];
+                                }
+                                else
+                                {
+                                    Console.WriteLine($"Warning: no mapping found for file {filename}");
+                                }
                             }
 
                             var originalSCDFolder = FindPCEquivalent(filename, allPCfiles);
@@ -72,7 +76,19 @@ namespace AudioConverter
                             var originalSCDRelativePath = originalSCDFolder.Replace($"{pcExtractionFolder}\\", "");
                             var scdOutputFolder = Path.Combine(outputFolder, originalSCDRelativePath);
 
-                            SCDEncoder.SCDTools.ConvertFile(file, scdOutputFolder, originalSCDFolder, mapping);
+                            if (SCDEncoder.SCDTools.ConvertFile(file, scdOutputFolder, originalSCDFolder, mapping))
+                            {
+                                // Copy original file in the "original" output folder
+                                var originalFilePath = Path.Combine(outputFolder, originalSCDRelativePath.Replace("remastered", "original"));
+                                var originalFileFolder = Directory.GetParent(originalFilePath).FullName;
+
+                                if (!Directory.Exists(originalFileFolder))
+                                    Directory.CreateDirectory(originalFileFolder);
+
+                                File.Copy(file, originalFilePath, true);
+
+                                //Console.WriteLine($"Converted {Path.GetFileName(file)}");
+                            }
                         }
                     }
                 }

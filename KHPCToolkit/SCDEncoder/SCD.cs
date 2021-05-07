@@ -209,7 +209,7 @@ namespace SCDEncoder
             {
                 if (stream.Position != _table3Offsets[i])
                 {
-                    Console.WriteLine($"Seek to the proper offset for index {i} of Table 3");
+                    //Console.WriteLine($"Seek to the proper offset for index {i} of Table 3");
                     stream.Seek(_table3Offsets[i], SeekOrigin.Begin);
                     //throw new Exception("Wrong stream position!");
                 }
@@ -237,7 +237,7 @@ namespace SCDEncoder
             {
                 if (stream.Position != _table1Offsets[i])
                 {
-                    Console.WriteLine($"Seek to the proper offset for index {i} of Table 1");
+                    //Console.WriteLine($"Seek to the proper offset for index {i} of Table 1");
                     stream.Seek(_table1Offsets[i], SeekOrigin.Begin);
                     //throw new Exception("Wrong stream position!");
                 }
@@ -250,7 +250,7 @@ namespace SCDEncoder
             {
                 if (stream.Position != _table4Offsets[i])
                 {
-                    Console.WriteLine($"Seek to the proper offset for index {i} of Table 4");
+                    //Console.WriteLine($"Seek to the proper offset for index {i} of Table 4");
                     stream.Seek(_table4Offsets[i], SeekOrigin.Begin);
                     //throw new Exception("Wrong stream position!");
                 }

@@ -42,7 +42,7 @@ namespace SCDEncoder
             return true;
         }
 
-        public static void ConvertFile(string inputFile, string outputFolder, string originalSCDFolder, Dictionary<int, int> mapping = null)
+        public static bool ConvertFile(string inputFile, string outputFolder, string originalSCDFolder, Dictionary<int, int> mapping = null)
         {
             var filename = Path.GetFileName(inputFile);
             var filenameWithoutExtension = Path.GetFileNameWithoutExtension(inputFile);
@@ -53,15 +53,15 @@ namespace SCDEncoder
             if (Directory.Exists(tmpFolder))
                 Directory.Delete(tmpFolder, true);
 
-            Console.WriteLine($"Convert {filename}");
-
             var vagFiles = VAGExtractor.VAGTools.ExtractVAGFiles(inputFile, tmpFolder, true, true);
 
             if (vagFiles.Count == 0)
             {
-                Console.WriteLine("No VAG files found...");
-                return;
+                //Console.WriteLine("No VAG files found...");
+                return false;
             }
+
+            Console.WriteLine($"Convert {filename}");
 
             foreach (var file in vagFiles)
             {
@@ -92,6 +92,7 @@ namespace SCDEncoder
                     p.StartInfo.Arguments = $"-o \"{currentWavPCMPath}\" \"{vagFile}\"";
                     p.StartInfo.UseShellExecute = false;
                     p.StartInfo.RedirectStandardInput = false;
+                    p.StartInfo.RedirectStandardOutput = true;
                     p.Start();
                     p.WaitForExit();
 
@@ -100,6 +101,7 @@ namespace SCDEncoder
                     p.StartInfo.Arguments = $"\"{currentWavPCMPath}\" --rate 48000 \"{currentWavPCM48Path}\"";
                     p.StartInfo.UseShellExecute = false;
                     p.StartInfo.RedirectStandardInput = false;
+                    p.StartInfo.RedirectStandardOutput = true;
                     p.Start();
                     p.WaitForExit();
 
@@ -120,6 +122,7 @@ namespace SCDEncoder
                 p.StartInfo.Arguments = $"-b 32 \"{wavPCMFile}\" \"{currentWavADPCMPath}\"";
                 p.StartInfo.UseShellExecute = false;
                 p.StartInfo.RedirectStandardInput = false;
+                p.StartInfo.RedirectStandardOutput = true;
                 p.Start();
                 p.WaitForExit();
 
@@ -153,7 +156,7 @@ namespace SCDEncoder
 
                     if (wavFile == null)
                     {
-                        Console.WriteLine($"Warning: Unable to find the WAV file equivalent to {Path.GetFileName(originalSCDFile)}...");
+                        //Console.WriteLine($"Warning: Unable to find the WAV file equivalent to {Path.GetFileName(originalSCDFile)}...");
                         continue;
                     }
 
@@ -172,11 +175,7 @@ namespace SCDEncoder
                 }
             }
 
-            Console.WriteLine($"Converted {Path.GetFileName(inputFile)} into {Path.GetFileName(outputFile)}. (output: {outputFile})");
-
-#if RELEASE
-            Directory.Delete(tmpFolder, true);
-#endif
+            return true;
         }
 
         public static void CreateSCD(List<string> wavFiles, string outputFile, string originalSCDFile, Dictionary<int, int> mapping = null)
