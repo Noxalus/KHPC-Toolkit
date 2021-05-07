@@ -3,6 +3,16 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net5.0</TargetFramework>
+    <Copyright>Noxalus</Copyright>
+    <Description>Convert all audio files from Kingdom Hearts PS2 ISO into the equivalent but compatible for the PC version.</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SCDEncoder\SCDEncoder.csproj" />
+  </ItemGroup>
 
 </Project>

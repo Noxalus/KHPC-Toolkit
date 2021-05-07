@@ -237,7 +237,9 @@ namespace SCDEncoder
             {
                 if (stream.Position != _table1Offsets[i])
                 {
-                    throw new Exception("Wrong stream position!");
+                    Console.WriteLine($"Seek to the proper offset for index {i} of Table 1");
+                    stream.Seek(_table1Offsets[i], SeekOrigin.Begin);
+                    //throw new Exception("Wrong stream position!");
                 }
 
                 var data = BinaryMapping.ReadObject<Table1Data>(stream);
@@ -249,7 +251,7 @@ namespace SCDEncoder
                 if (stream.Position != _table4Offsets[i])
                 {
                     Console.WriteLine($"Seek to the proper offset for index {i} of Table 4");
-                    stream.Seek(_table3Offsets[i], SeekOrigin.Begin);
+                    stream.Seek(_table4Offsets[i], SeekOrigin.Begin);
                     //throw new Exception("Wrong stream position!");
                 }
 

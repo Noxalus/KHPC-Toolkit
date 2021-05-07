@@ -3,6 +3,8 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net5.0</TargetFramework>
+    <Copyright>Noxalus</Copyright>
+    <Description>Extract all VAG files from any kind of file.</Description>
   </PropertyGroup>
 
   <ItemGroup>
