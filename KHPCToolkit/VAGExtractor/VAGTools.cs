@@ -27,6 +27,7 @@ namespace VAGExtractor
 
                 var vag = new VAG(inputStream);
 
+                keepName = keepName && !string.IsNullOrEmpty(vag.Name);
                 vagFiles.Add(vag.Export(outputFolder, keepName ? null : i.ToString(), removeSuffix));
             }
 

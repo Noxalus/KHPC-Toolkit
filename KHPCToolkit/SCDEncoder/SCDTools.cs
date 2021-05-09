@@ -70,9 +70,6 @@ namespace SCDEncoder
 
             Directory.CreateDirectory(tmpFolder);
 
-            if (!Directory.Exists(outputFolder))
-                Directory.CreateDirectory(outputFolder);
-
             var wavPCMPath = Path.Combine(tmpFolder, $"{filenameWithoutExtension}.wav");
 
             var p = new Process();
@@ -96,14 +93,23 @@ namespace SCDEncoder
                     p.Start();
                     p.WaitForExit();
 
+                    bool useSoX = false;
+
                     // Convert WAV PCM (any sample rate) to WAV PCM with a sample rate of 48kHz
-                    p.StartInfo.FileName = $@"{TOOLS_PATH}/sox/sox.exe";
-                    p.StartInfo.Arguments = $"\"{currentWavPCMPath}\" --rate 48000 \"{currentWavPCM48Path}\"";
-                    p.StartInfo.UseShellExecute = false;
-                    p.StartInfo.RedirectStandardInput = false;
-                    p.StartInfo.RedirectStandardOutput = true;
-                    p.Start();
-                    p.WaitForExit();
+                    if (useSoX)
+                    {
+                        p.StartInfo.FileName = $@"{TOOLS_PATH}/sox/sox.exe";
+                        p.StartInfo.Arguments = $"\"{currentWavPCMPath}\" --rate 48000 \"{currentWavPCM48Path}\"";
+                        p.StartInfo.UseShellExecute = false;
+                        p.StartInfo.RedirectStandardInput = false;
+                        p.StartInfo.RedirectStandardOutput = true;
+                        p.Start();
+                        p.WaitForExit();
+                    }
+                    else
+                    {
+                        currentWavPCM48Path = currentWavPCMPath;
+                    }
 
                     wavPCMFiles.Add(currentWavPCM48Path);
                 }
@@ -132,24 +138,45 @@ namespace SCDEncoder
             p.Close();
 
             // Output multiple or a single SCD file?
-            var outputFile = Path.Combine(outputFolder, $"{filenameWithoutExtension}.win32.scd");
-            var outputSCDFiles = Directory.GetFiles(originalSCDFolder, "*.scd", SearchOption.TopDirectoryOnly);
+            var outputFile = outputFolder;
+            var outputSCDFiles = new List<string>();
 
-            if (outputSCDFiles.Length == 1)
+            FileAttributes attr = File.GetAttributes(originalSCDFolder);
+            bool isFolder = attr.HasFlag(FileAttributes.Directory);
+
+            if (isFolder)
+            {
+                outputFile = Path.Combine(outputFolder, $"{filenameWithoutExtension}.win32.scd");
+
+                foreach (var file in Directory.GetFiles(originalSCDFolder, "*.scd", SearchOption.TopDirectoryOnly))
+                {
+                    outputSCDFiles.Add(file);
+                }
+            }
+            else
+            {
+                outputSCDFiles.Add(originalSCDFolder);
+            }
+
+            if (outputSCDFiles.Count == 1)
             {
                 var scdPath = Path.Combine(tmpFolder, $"{filenameWithoutExtension}.scd");
+
+                if (CreateSCD(wavADPCMFiles, scdPath, outputSCDFiles[0], mapping) == null)
+                {
+                    return false;
+                }
 
                 var scdOutputFolder = Directory.GetParent(outputFile).FullName;
 
                 if (!Directory.Exists(scdOutputFolder))
                     Directory.CreateDirectory(scdOutputFolder);
 
-                CreateSCD(wavADPCMFiles, scdPath, outputSCDFiles[0], mapping);
                 File.Copy(scdPath, outputFile, true);
             }
             else
             {
-                for (int i = 0; i < outputSCDFiles.Length; i++)
+                for (int i = 0; i < outputSCDFiles.Count; i++)
                 {
                     var originalSCDFile = outputSCDFiles[i];
                     var wavFile = wavADPCMFiles.FirstOrDefault(filename => originalSCDFile.EndsWith($"{Path.GetFileNameWithoutExtension(filename)}.win32.scd"));
@@ -163,13 +190,16 @@ namespace SCDEncoder
                     var wavFilenameWithoutExtension = Path.GetFileNameWithoutExtension(wavFile);
                     var scdPath = Path.Combine(tmpFolder, $"{wavFilenameWithoutExtension}.scd");
 
+                    if (CreateSCD(new List<string>() { wavFile }, scdPath, originalSCDFile) == null)
+                    {
+                        return false;
+                    }
+
                     outputFile = Path.Combine(outputFolder, $"{wavFilenameWithoutExtension}.win32.scd");
                     var scdOutputFolder = Directory.GetParent(outputFile).FullName;
 
                     if (!Directory.Exists(scdOutputFolder))
                         Directory.CreateDirectory(scdOutputFolder);
-
-                    CreateSCD(new List<string>() { wavFile }, scdPath, originalSCDFile);
 
                     File.Copy(scdPath, outputFile, true);
                 }
@@ -178,7 +208,7 @@ namespace SCDEncoder
             return true;
         }
 
-        public static void CreateSCD(List<string> wavFiles, string outputFile, string originalSCDFile, Dictionary<int, int> mapping = null)
+        public static string CreateSCD(List<string> wavFiles, string outputFile, string originalSCDFile, Dictionary<int, int> mapping = null)
         {
             var scd = new SCD(File.OpenRead(originalSCDFile));
 
@@ -206,10 +236,12 @@ namespace SCDEncoder
 
             if (scd.StreamsData.Count != wavFiles.Count)
             {
-                throw new Exception(
+                Console.WriteLine(
                     "The streams count in the original SCD and the the WAV count doesn't match, " +
                     "please make sure the original SCD you specified correspond to the VSB/WAVs you specified."
                 );
+
+                return null;
             }
 
             var wavesContent = new List<byte[]>();
@@ -314,6 +346,8 @@ namespace SCDEncoder
 
                 // Check the new SCD is correct
                 var newScd = new SCD(File.OpenRead(outputFile));
+
+                return outputFile;
             }
         }
     }

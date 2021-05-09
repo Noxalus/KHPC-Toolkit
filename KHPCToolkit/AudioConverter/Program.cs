@@ -16,130 +16,136 @@ namespace AudioConverter
         private static Dictionary<string, Dictionary<int, int>> _streamsMapping = new Dictionary<string, Dictionary<int, int>>();
         private static List<string>  _voiceFiles = new List<string>();
 
+        private const string REMASTERED_FOLDER = "remastered";
+        private const string ORIGINAL_FOLDER = "original";
+
         static void Main(string[] args)
         {
-            if (args.Length == 3)
+            if (args.Length != 3)
             {
-                // Get voice files
-                foreach (var file in Directory.GetFiles(RESOURCES_PATH, "*_voice_files.json"))
-                {
-                    var content = File.ReadAllText(file);
-                    var data = JsonConvert.DeserializeObject<List<string>>(content);
+                Console.WriteLine("Usage:");
+                Console.WriteLine("SCDEncoder <file/dir> [<output dir>] [<original scd file>]");
+                return;
+            }
 
-                    _voiceFiles.AddRange(data);
+            // Get voice files
+            foreach (var file in Directory.GetFiles(RESOURCES_PATH, "*_voice_files.json"))
+            {
+                var content = File.ReadAllText(file);
+                var data = JsonConvert.DeserializeObject<List<string>>(content);
+
+                _voiceFiles.AddRange(data);
+            }
+
+            // Parse JSON files in the resources folder to get streams index mapping
+            foreach (var file in Directory.GetFiles(RESOURCES_PATH, "*_mapping.json"))
+            {
+                var content = File.ReadAllText(file);
+                var data = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<int, int>>>(content);
+
+                foreach (var key in data.Keys)
+                {
+                    _streamsMapping[key] = data[key];
                 }
+            }
 
-                // Parse JSON files in the resources folder to get streams index mapping
-                foreach (var file in Directory.GetFiles(RESOURCES_PATH, "*_mapping.json"))
+            var ps2ExtractionFolder = args[0];
+            var outputFolder = args[1];
+            var pcExtractionFolder = args[2];
+
+            FileAttributes attr = File.GetAttributes(ps2ExtractionFolder);
+
+            if (attr.HasFlag(FileAttributes.Directory))
+            {
+                var allPS2files = Directory.GetFiles(ps2ExtractionFolder, "*.*", SearchOption.AllDirectories);
+                var allPCfiles = Directory.GetFiles(pcExtractionFolder, "*.*", SearchOption.AllDirectories);
+
+                var performanceWatch = new Stopwatch();
+                performanceWatch.Start();
+
+                var convertedFilesCount = 0;
+
+                var validFiles = new List<string>();
+
+                foreach (var file in allPS2files)
                 {
-                    var content = File.ReadAllText(file);
-                    var data = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<int, int>>>(content);
+                    var filename = Path.GetFileName(file);
 
-                    foreach (var key in data.Keys)
+                    //if (!_voiceFiles.Contains(filename))
+                    //{
+                    //    continue;
+                    //}
+
+                    var extension = Path.GetExtension(file);
+
+                    if (SUPPORTED_EXTENSIONS.Contains(extension) && !EXCLUDED_FILES.Contains(filename))
                     {
-                        _streamsMapping[key] = data[key];
-                    }
-                }
+                        Dictionary<int, int> mapping = null;
 
-                var ps2ExtractionFolder = args[0];
-                var outputFolder = args[1];
-                var pcExtractionFolder = args[2];
-
-                FileAttributes attr = File.GetAttributes(ps2ExtractionFolder);
-
-                if (attr.HasFlag(FileAttributes.Directory))
-                {
-                    var directory = new DirectoryInfo(ps2ExtractionFolder);
-                    var allPS2files = Directory.GetFiles(ps2ExtractionFolder, "*.*", SearchOption.AllDirectories);
-                    var allPCfiles = Directory.GetFiles(pcExtractionFolder, "*.*", SearchOption.AllDirectories);
-
-                    var performanceWatch = new Stopwatch();
-                    performanceWatch.Start();
-
-                    var convertedFilesCount = 0;
-
-                    var validFiles = new List<string>();
-
-                    foreach (var file in allPS2files)
-                    {
-                        var filename = Path.GetFileName(file);
-
-                        if (!_voiceFiles.Contains(filename))
+                        // VSB files contain multiple tracks and must combine them in a single SCD with a specific order
+                        // The streams mapping file is used to make sure the order correspond to what we have on PC
+                        if (extension == ".vsb")
                         {
+                            if (_streamsMapping.ContainsKey(filename))
+                            {
+                                mapping = _streamsMapping[filename];
+                            }
+                            else
+                            {
+                                Console.WriteLine($"Warning: no mapping found for file {filename}");
+                            }
+                        }
+
+                        var originalSCDFolder = FindPCEquivalent(filename, allPCfiles);
+
+                        if (string.IsNullOrEmpty(originalSCDFolder))
+                        {
+                            Console.WriteLine($"No equivalent file on PC for {filename}");
                             continue;
                         }
 
-                        var extension = Path.GetExtension(file);
+                        // Make sure to preserve hierarchy
+                        var originalSCDRelativePath = originalSCDFolder.Replace($"{pcExtractionFolder}\\", "");
+                        var scdOutputFolder = Path.Combine(outputFolder, originalSCDRelativePath);
 
-                        if (SUPPORTED_EXTENSIONS.Contains(extension) && !EXCLUDED_FILES.Contains(filename))
+                        var scdConvertionPerformanceWatch = new Stopwatch();
+                        scdConvertionPerformanceWatch.Start();
+
+                        Console.WriteLine($"File {filename}");
+
+                        if (SCDEncoder.SCDTools.ConvertFile(file, scdOutputFolder, originalSCDFolder, mapping))
                         {
-                            Dictionary<int, int> mapping = null;
-
-                            if (extension == ".vsb")
-                            {
-                                if (_streamsMapping.ContainsKey(filename))
-                                {
-                                    mapping = _streamsMapping[filename];
-                                }
-                                else
-                                {
-                                    Console.WriteLine($"Warning: no mapping found for file {filename}");
-                                }
-                            }
-
-                            var originalSCDFolder = FindPCEquivalent(filename, allPCfiles);
-
-                            if (string.IsNullOrEmpty(originalSCDFolder))
-                            {
-                                Console.WriteLine($"No equivalent file on PC for {filename}");
-                                continue;
-                            }
-
-                            // Make sure to preserve hierarchy
-                            var originalSCDRelativePath = originalSCDFolder.Replace($"{pcExtractionFolder}\\", "");
-                            var scdOutputFolder = Path.Combine(outputFolder, originalSCDRelativePath);
-
-                            var scdConvertionPerformanceWatch = new Stopwatch();
-                            scdConvertionPerformanceWatch.Start();
-
-                            Console.WriteLine($"File {filename}");
-
-                            if (SCDEncoder.SCDTools.ConvertFile(file, scdOutputFolder, originalSCDFolder, mapping))
+                            if (originalSCDFolder.Contains(REMASTERED_FOLDER))
                             {
                                 // Copy original file in the "original" output folder
-                                var originalFilePath = Path.Combine(outputFolder, originalSCDRelativePath.Replace("remastered", "original"));
+                                var originalFilePath = Path.Combine(outputFolder, originalSCDRelativePath.Replace(REMASTERED_FOLDER, ORIGINAL_FOLDER));
                                 var originalFileFolder = Directory.GetParent(originalFilePath).FullName;
 
                                 if (!Directory.Exists(originalFileFolder))
                                     Directory.CreateDirectory(originalFileFolder);
 
                                 File.Copy(file, originalFilePath, true);
-
-                                scdConvertionPerformanceWatch.Stop();
-                                Console.WriteLine($"Done in {scdConvertionPerformanceWatch.ElapsedMilliseconds}ms");
-
-                                convertedFilesCount++;
-
-                                validFiles.Add(filename);
                             }
+
+                            scdConvertionPerformanceWatch.Stop();
+                            Console.WriteLine($"Done in {scdConvertionPerformanceWatch.ElapsedMilliseconds}ms");
+
+                            convertedFilesCount++;
+
+                            validFiles.Add(filename);
                         }
                     }
-
-                    var validFilesPath = Path.Combine(outputFolder, "validFiles.txt");
-                    File.WriteAllText(validFilesPath, String.Join(Environment.NewLine, validFiles)) ;
-
-                    performanceWatch.Stop();
-                    Console.WriteLine($"Converted {convertedFilesCount} files in {performanceWatch.ElapsedMilliseconds}ms");
                 }
-                else
-                {
-                    Console.WriteLine($"{ps2ExtractionFolder} is not a folder, make sure the first argument is a valid folder!");
-                }
+
+                var validFilesPath = Path.Combine(outputFolder, "validFiles.txt");
+                File.WriteAllText(validFilesPath, String.Join(Environment.NewLine, validFiles)) ;
+
+                performanceWatch.Stop();
+                Console.WriteLine($"Converted {convertedFilesCount} files in {performanceWatch.ElapsedMilliseconds}ms");
             }
             else
             {
-                Console.WriteLine("Usage:");
-                Console.WriteLine("SCDEncoder <file/dir> [<output dir>] [<original scd file>]");
+                Console.WriteLine($"{ps2ExtractionFolder} is not a folder, make sure the first argument is a valid folder!");
             }
         }
 
@@ -149,7 +155,7 @@ namespace AudioConverter
             {
                 var filename = pcFiles[i];
 
-                if (filename.Contains("remastered"))
+                if (filename.Contains(REMASTERED_FOLDER))
                 {
                     var parentFolder = Directory.GetParent(filename);
                     
@@ -158,7 +164,7 @@ namespace AudioConverter
                         return parentFolder.FullName;
                     }
                 }
-                else if (filename.Contains("original"))
+                else if (filename.Contains(ORIGINAL_FOLDER))
                 {
                     var extension = Path.GetExtension(filename);
 
