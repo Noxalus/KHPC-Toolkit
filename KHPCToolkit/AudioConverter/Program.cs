@@ -9,7 +9,7 @@ namespace AudioConverter
     class Program
     {
         private static readonly string RESOURCES_PATH = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), "resources");
-        private static readonly List<string> SUPPORTED_EXTENSIONS = new List<string>() { ".vsb", ".vset", ".mdls", ".dat" };
+        private static readonly List<string> SUPPORTED_EXTENSIONS = new List<string>() { ".vsb", ".vset", ".mdls", ".dat", ".bar", ".fr", ".vag" };
         private static readonly List<string> EXCLUDED_FILES = new List<string>() { "voice001.vset", "demo.dat", "end.dat", "end2.dat", "opn.dat" };
         
         // Used to store the mapping between stream names and track index and make sure the output SCD has the track in the proper order

@@ -61,7 +61,7 @@ namespace SCDEncoder
 
             Directory.CreateDirectory(TMP_FOLDER);
 
-            var vagFiles = VAGExtractor.VAGTools.ExtractVAGFiles(inputFile, TMP_FOLDER, true, true);
+            var vagFiles = VAGExtractor.VAGTools.ExtractVAGFiles(inputFile, TMP_FOLDER, 1, true);
 
             if (vagFiles.Count == 0)
             {
@@ -337,7 +337,7 @@ namespace SCDEncoder
 
                     streamsOffsets.Add(streamOffset);
 
-                    streamOffset += (uint)(audioConte.Length + (streamHeaderSize + scd.StreamsData[i].ExtraData.Length));
+                    streamOffset += (uint)(audioContent.Length + (streamHeaderSize + scd.StreamsData[i].ExtraData.Length));
                 }
 
                 // Write the original data from current stream position to the start of the first stream header
