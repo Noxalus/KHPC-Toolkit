@@ -13,8 +13,9 @@ namespace SCDEncoder
     public class SCDTools
     {
         private static readonly string TOOLS_PATH = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), "tools");
+        private static readonly string TMP_FOLDER = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), "tmp");
 
-        private const string TMP_FOLDER_NAME = "tmp";
+        private const bool USE_SOX = false;
 
         public static bool CheckTools()
         {
@@ -39,6 +40,13 @@ namespace SCDEncoder
                 return false;
             }
 
+            if (!File.Exists(@$"{TOOLS_PATH}/oggenc/oggenc2.exe"))
+            {
+                Console.WriteLine($"Please put oggenc2.exe in the tools folder: {TOOLS_PATH}/oggenc");
+                Console.WriteLine("You can find it here: https://www.rarewares.org/ogg-oggenc.php");
+                return false;
+            }
+
             return true;
         }
 
@@ -48,12 +56,12 @@ namespace SCDEncoder
             var filenameWithoutExtension = Path.GetFileNameWithoutExtension(inputFile);
             var fileExtension = Path.GetExtension(inputFile);
 
-            var tmpFolder = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), TMP_FOLDER_NAME);
+            if (Directory.Exists(TMP_FOLDER))
+                Directory.Delete(TMP_FOLDER, true);
 
-            if (Directory.Exists(tmpFolder))
-                Directory.Delete(tmpFolder, true);
+            Directory.CreateDirectory(TMP_FOLDER);
 
-            var vagFiles = VAGExtractor.VAGTools.ExtractVAGFiles(inputFile, tmpFolder, true, true);
+            var vagFiles = VAGExtractor.VAGTools.ExtractVAGFiles(inputFile, TMP_FOLDER, true, true);
 
             if (vagFiles.Count == 0)
             {
@@ -68,22 +76,20 @@ namespace SCDEncoder
                 Console.WriteLine($"\t{Path.GetFileName(file)}");
             }
 
-            Directory.CreateDirectory(tmpFolder);
 
-            var wavPCMPath = Path.Combine(tmpFolder, $"{filenameWithoutExtension}.wav");
+            var wavPCMPath = Path.Combine(TMP_FOLDER, $"{filenameWithoutExtension}.wav");
 
             var p = new Process();
 
             var wavPCMFiles = new List<string>();
-            var wavADPCMFiles = new List<string>();
 
             // Convert VAG to WAV
             if (vagFiles.Count > 0)
             {
                 foreach (var vagFile in vagFiles)
                 {
-                    var currentWavPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(vagFile)}@pcm.wav");
-                    var currentWavPCM48Path = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(vagFile)}@pcm-48.wav");
+                    var currentWavPCMPath = Path.Combine(TMP_FOLDER, $"{Path.GetFileNameWithoutExtension(vagFile)}@pcm.wav");
+                    var currentWavPCM48Path = Path.Combine(TMP_FOLDER, $"{Path.GetFileNameWithoutExtension(vagFile)}@pcm-48.wav");
 
                     p.StartInfo.FileName = $@"{TOOLS_PATH}/vgmstream/test.exe";
                     p.StartInfo.Arguments = $"-o \"{currentWavPCMPath}\" \"{vagFile}\"";
@@ -93,10 +99,9 @@ namespace SCDEncoder
                     p.Start();
                     p.WaitForExit();
 
-                    bool useSoX = false;
 
                     // Convert WAV PCM (any sample rate) to WAV PCM with a sample rate of 48kHz
-                    if (useSoX)
+                    if (USE_SOX)
                     {
                         p.StartInfo.FileName = $@"{TOOLS_PATH}/sox/sox.exe";
                         p.StartInfo.Arguments = $"\"{currentWavPCMPath}\" --rate 48000 \"{currentWavPCM48Path}\"";
@@ -117,22 +122,6 @@ namespace SCDEncoder
             else
             {
                 wavPCMFiles.Add(wavPCMPath);
-            }
-
-            foreach (var wavPCMFile in wavPCMFiles)
-            {
-                var currentWavADPCMPath = Path.Combine(tmpFolder, $"{Path.GetFileNameWithoutExtension(wavPCMFile).Split("@")[0]}.wav");
-
-                // Convert WAV PCM into WAV MS-ADPCM
-                p.StartInfo.FileName = $@"{TOOLS_PATH}/adpcmencode/adpcmencode3.exe";
-                p.StartInfo.Arguments = $"-b 32 \"{wavPCMFile}\" \"{currentWavADPCMPath}\"";
-                p.StartInfo.UseShellExecute = false;
-                p.StartInfo.RedirectStandardInput = false;
-                p.StartInfo.RedirectStandardOutput = true;
-                p.Start();
-                p.WaitForExit();
-
-                wavADPCMFiles.Add(currentWavADPCMPath);
             }
 
             p.Close();
@@ -160,9 +149,9 @@ namespace SCDEncoder
 
             if (outputSCDFiles.Count == 1)
             {
-                var scdPath = Path.Combine(tmpFolder, $"{filenameWithoutExtension}.scd");
+                var scdPath = Path.Combine(TMP_FOLDER, $"{filenameWithoutExtension}.scd");
 
-                if (CreateSCD(wavADPCMFiles, scdPath, outputSCDFiles[0], mapping) == null)
+                if (CreateSCD(wavPCMFiles, scdPath, outputSCDFiles[0], mapping) == null)
                 {
                     return false;
                 }
@@ -179,7 +168,7 @@ namespace SCDEncoder
                 for (int i = 0; i < outputSCDFiles.Count; i++)
                 {
                     var originalSCDFile = outputSCDFiles[i];
-                    var wavFile = wavADPCMFiles.FirstOrDefault(filename => originalSCDFile.EndsWith($"{Path.GetFileNameWithoutExtension(filename)}.win32.scd"));
+                    var wavFile = wavPCMFiles.FirstOrDefault(filename => originalSCDFile.EndsWith($"{Path.GetFileNameWithoutExtension(filename)}.win32.scd"));
 
                     if (wavFile == null)
                     {
@@ -188,7 +177,7 @@ namespace SCDEncoder
                     }
 
                     var wavFilenameWithoutExtension = Path.GetFileNameWithoutExtension(wavFile);
-                    var scdPath = Path.Combine(tmpFolder, $"{wavFilenameWithoutExtension}.scd");
+                    var scdPath = Path.Combine(TMP_FOLDER, $"{wavFilenameWithoutExtension}.scd");
 
                     if (CreateSCD(new List<string>() { wavFile }, scdPath, originalSCDFile) == null)
                     {
@@ -244,14 +233,58 @@ namespace SCDEncoder
                 return null;
             }
 
-            var wavesContent = new List<byte[]>();
+            var streamsAudioData = new List<byte[]>();
 
             foreach (var wavFile in orderedWavFiles)
             {
-                var wavContent = Helpers.StripWavHeader(File.ReadAllBytes(wavFile.Value));
-                Helpers.Align(ref wavContent, 0x10);
+                var index = wavFile.Key;
+                var wavFilename = wavFile.Value;
+                var finalAudioFilePath = Path.GetFileNameWithoutExtension(wavFilename).Split("@")[0];
+                var streamAudioData = new byte[0];
 
-                wavesContent.Add(wavContent);
+                // Convert wav files according to origin SCD codec
+                var originalScdStream = scd.StreamsData[wavFile.Key];
+
+                if (originalScdStream.Header.Codec == (uint)SCD.Codecs.MSADPCM)
+                {
+                    finalAudioFilePath = Path.Combine(TMP_FOLDER, $"{finalAudioFilePath}.wav");
+
+                    // Convert WAV PCM into WAV MS-ADPCM
+                    var p = new Process();
+                    p.StartInfo.FileName = $@"{TOOLS_PATH}/adpcmencode/adpcmencode3.exe";
+                    p.StartInfo.Arguments = $"-b 32 \"{wavFilename}\" \"{finalAudioFilePath}\"";
+                    p.StartInfo.UseShellExecute = false;
+                    p.StartInfo.RedirectStandardInput = false;
+                    p.StartInfo.RedirectStandardOutput = true;
+                    p.Start();
+                    p.WaitForExit();
+
+                    p.Close();
+
+                    streamAudioData = Helpers.StripWavHeader(File.ReadAllBytes(finalAudioFilePath));
+                }
+                else if (originalScdStream.Header.Codec == (uint)SCD.Codecs.OGG)
+                {
+                    finalAudioFilePath = Path.Combine(TMP_FOLDER, $"{finalAudioFilePath}.ogg");
+
+                    // Convert WAV PCM into WAV MS-ADPCM
+                    var p = new Process();
+                    p.StartInfo.FileName = $@"{TOOLS_PATH}/oggenc/oggenc2.exe";
+                    p.StartInfo.Arguments = $" -s {index} --resample 48000 -o \"{finalAudioFilePath}\" \"{wavFilename}\"";
+                    p.StartInfo.UseShellExecute = false;
+                    p.StartInfo.RedirectStandardInput = false;
+                    p.StartInfo.RedirectStandardOutput = true;
+                    p.Start();
+                    p.WaitForExit();
+
+                    p.Close();
+
+                    streamAudioData = File.ReadAllBytes(finalAudioFilePath);
+                }
+
+                Helpers.Align(ref streamAudioData, 0x10);
+
+                streamsAudioData.Add(streamAudioData);
             }
 
             using (var writer = new MemoryStream())
@@ -266,7 +299,7 @@ namespace SCDEncoder
                     Padding = scd.Header.Padding,
                     HeaderSize = scd.Header.HeaderSize,
                     // TODO: Fix this, it should be new total file size - table 0 offset position (which correspond to the header size?)
-                    TotalFileSize = (uint)wavesContent.Sum(content => content.Length)
+                    TotalFileSize = (uint)streamsAudioData.Sum(content => content.Length)
                 };
 
                 BinaryMapping.WriteObject(writer, scdHeader);
@@ -297,14 +330,14 @@ namespace SCDEncoder
                 var streamHeaderSize = 32;
                 var streamsOffsets = new List<uint>();
 
-                for (int i = 0; i < wavesContent.Count; i++)
+                for (int i = 0; i < streamsAudioData.Count; i++)
                 {
-                    var wavContent = wavesContent[i];
+                    var audioContent = streamsAudioData[i];
                     writer.Write(BitConverter.GetBytes(streamOffset));
 
                     streamsOffsets.Add(streamOffset);
 
-                    streamOffset += (uint)(wavContent.Length + (streamHeaderSize + scd.StreamsData[i].ExtraData.Length));
+                    streamOffset += (uint)(audioConte.Length + (streamHeaderSize + scd.StreamsData[i].ExtraData.Length));
                 }
 
                 // Write the original data from current stream position to the start of the first stream header
@@ -316,30 +349,28 @@ namespace SCDEncoder
                 {
                     var streamData = scd.StreamsData[i];
                     var wavFile = wavFiles[i];
-                    var wavContent = wavesContent[i];
+                    var audioContent = streamsAudioData[i];
 
-                    var waveFileInfo = new WaveFileReader(wavFile);
+                    var newStreamHeader = streamData.Header;
 
-                    var newStreamHeader = new SCD.StreamHeader
+                    newStreamHeader.StreamSize = (uint)audioContent.Length;
+
+                    if (streamData.Header.Codec == (uint)SCD.Codecs.MSADPCM)
                     {
-                        AuxChunkCount = streamData.Header.AuxChunkCount,
-                        ChannelCount = (uint)waveFileInfo.WaveFormat.Channels,
-                        Codec = streamData.Header.Codec,
-                        ExtraDataSize = streamData.Header.ExtraDataSize,
-                        LoopStart = streamData.Header.LoopStart,
-                        LoopEnd = streamData.Header.LoopEnd,
-                        SampleRate = (uint)waveFileInfo.WaveFormat.SampleRate,
-                        StreamSize = (uint)wavContent.Length
-                    };
+                        var waveFileInfo = new WaveFileReader(wavFile);
+
+                        newStreamHeader.ChannelCount = (uint)waveFileInfo.WaveFormat.Channels;
+                        newStreamHeader.SampleRate = (uint)waveFileInfo.WaveFormat.SampleRate;
+
+                        waveFileInfo.Close();
+                    }
 
                     // Write stream header
                     BinaryMapping.WriteObject(writer, newStreamHeader);
                     // Write stream extra data
                     writer.Write(streamData.ExtraData);
                     // Write stream audio data
-                    writer.Write(wavContent);
-
-                    waveFileInfo.Close();
+                    writer.Write(audioContent);
                 }
 
                 File.WriteAllBytes(outputFile, writer.ReadAllBytes());

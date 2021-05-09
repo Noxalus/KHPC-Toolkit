@@ -13,6 +13,12 @@ namespace SCDEncoder
         private const UInt64 MAGIC_CODE = 0x4643535342444553;
         private const byte SSCF_VERSION = 0x4;
 
+        public enum Codecs
+        {
+            OGG = 0x06,
+            MSADPCM = 0x0C,
+        }
+
         public class SCDHeader
         {
             [Data] public UInt64 MagicCode { get; set; }

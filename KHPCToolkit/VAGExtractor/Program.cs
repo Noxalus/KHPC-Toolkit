@@ -14,7 +14,7 @@ namespace VAGExtractor
             {
                 var inputFile = args[0];
                 var outputFolder = args.Length > 1 ? args[1] : "output";
-                var keepName = args.Length > 2;
+                var keepName = args.Length > 2 ? int.Parse(args[2]) : 0;
 
                 VAGTools.ExtractVAGFiles(inputFile, outputFolder, keepName);
             }
