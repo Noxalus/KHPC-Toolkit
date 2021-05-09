@@ -53,7 +53,7 @@ namespace VAGExtractor
 
         public string Export(string outputPath, string newFilename = null, bool removeSuffix = true)
         {
-            var filename = $"{(newFilename != null ? newFilename : Name)}.vag";
+            var filename = $"{newFilename}.vag";
 
             if (removeSuffix)
                 filename = filename.Replace("_f", "");

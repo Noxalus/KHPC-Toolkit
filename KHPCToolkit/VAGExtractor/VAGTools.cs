@@ -9,7 +9,7 @@ namespace VAGExtractor
 {
     public static class VAGTools
     {
-        public static List<string> ExtractVAGFiles(string inputFile, string outputFolder, bool keepName = false, bool removeSuffix = true)
+        public static List<string> ExtractVAGFiles(string inputFile, string outputFolder, int keepName = 0, bool removeSuffix = true)
         {
             var vagFiles = new List<string>();
 
@@ -27,8 +27,15 @@ namespace VAGExtractor
 
                 var vag = new VAG(inputStream);
 
-                keepName = keepName && !string.IsNullOrEmpty(vag.Name);
-                vagFiles.Add(vag.Export(outputFolder, keepName ? null : i.ToString(), removeSuffix));
+                keepName = keepName > 0 && !string.IsNullOrEmpty(vag.Name) ? keepName : 0;
+                var newName = i.ToString();
+
+                if (keepName == 1)
+                    newName = vag.Name;
+                else if (keepName == 2)
+                    newName += $"-{vag.Name}";
+
+                vagFiles.Add(vag.Export(outputFolder, newName, removeSuffix));
             }
 
             inputStream.Close();
