@@ -15,7 +15,7 @@ namespace SCDEncoder
         private static readonly string TOOLS_PATH = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), "tools");
         private static readonly string TMP_FOLDER = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), "tmp");
 
-        private const bool USE_SOX = false;
+        private const bool USE_SOX = true;
 
         public static bool CheckTools()
         {
@@ -88,11 +88,10 @@ namespace SCDEncoder
             {
                 foreach (var vagFile in vagFiles)
                 {
-                    var currentWavPCMPath = Path.Combine(TMP_FOLDER, $"{Path.GetFileNameWithoutExtension(vagFile)}@pcm.wav");
-                    var currentWavPCM48Path = Path.Combine(TMP_FOLDER, $"{Path.GetFileNameWithoutExtension(vagFile)}@pcm-48.wav");
+                    var currentWavFile = Path.Combine(TMP_FOLDER, $"{Path.GetFileNameWithoutExtension(vagFile)}.wav");
 
                     p.StartInfo.FileName = $@"{TOOLS_PATH}/vgmstream/test.exe";
-                    p.StartInfo.Arguments = $"-o \"{currentWavPCMPath}\" \"{vagFile}\"";
+                    p.StartInfo.Arguments = $"-o \"{currentWavFile}\" \"{vagFile}\"";
                     p.StartInfo.UseShellExecute = false;
                     p.StartInfo.RedirectStandardInput = false;
                     p.StartInfo.RedirectStandardOutput = true;
@@ -103,20 +102,21 @@ namespace SCDEncoder
                     // Convert WAV PCM (any sample rate) to WAV PCM with a sample rate of 48kHz
                     if (USE_SOX)
                     {
+                        var increaseVolume = fileExtension == ".vset" ? "vol 10 dB" : "";
+
+                        var currentWav48kHzFile  = Path.Combine(TMP_FOLDER, $"{Path.GetFileNameWithoutExtension(vagFile)}-48.wav");
                         p.StartInfo.FileName = $@"{TOOLS_PATH}/sox/sox.exe";
-                        p.StartInfo.Arguments = $"\"{currentWavPCMPath}\" --rate 48000 \"{currentWavPCM48Path}\"";
+                        p.StartInfo.Arguments = $" \"{currentWavFile}\" --rate 48000 \"{currentWav48kHzFile}\" {increaseVolume}";
                         p.StartInfo.UseShellExecute = false;
                         p.StartInfo.RedirectStandardInput = false;
                         p.StartInfo.RedirectStandardOutput = true;
                         p.Start();
                         p.WaitForExit();
-                    }
-                    else
-                    {
-                        currentWavPCM48Path = currentWavPCMPath;
+
+                        File.Copy(currentWav48kHzFile, currentWavFile, true);
                     }
 
-                    wavPCMFiles.Add(currentWavPCM48Path);
+                    wavPCMFiles.Add(currentWavFile);
                 }
             }
             else
@@ -135,8 +135,6 @@ namespace SCDEncoder
 
             if (isFolder)
             {
-                outputFile = Path.Combine(outputFolder, $"{filenameWithoutExtension}.win32.scd");
-
                 foreach (var file in Directory.GetFiles(originalSCDFolder, "*.scd", SearchOption.TopDirectoryOnly))
                 {
                     outputSCDFiles.Add(file);
@@ -149,7 +147,8 @@ namespace SCDEncoder
 
             if (outputSCDFiles.Count == 1)
             {
-                var scdPath = Path.Combine(TMP_FOLDER, $"{filenameWithoutExtension}.scd");
+                var scdPath = Path.Combine(TMP_FOLDER, $"{Path.GetFileNameWithoutExtension(outputSCDFiles[0])}.scd");
+                outputFile = Path.Combine(outputFolder, $"{Path.GetFileNameWithoutExtension(outputSCDFiles[0])}.scd");
 
                 if (CreateSCD(wavPCMFiles, scdPath, outputSCDFiles[0], mapping) == null)
                 {
