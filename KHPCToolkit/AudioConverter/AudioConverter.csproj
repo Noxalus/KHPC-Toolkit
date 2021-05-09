@@ -15,4 +15,16 @@
     <ProjectReference Include="..\SCDEncoder\SCDEncoder.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="resources\kh1fm_mapping.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="resources\kh1fm_voice_files.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="resources\kh2fm_mapping.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

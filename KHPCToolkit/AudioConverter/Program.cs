@@ -1,6 +1,7 @@
 ﻿using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 
 namespace AudioConverter
@@ -13,14 +14,23 @@ namespace AudioConverter
         
         // Used to store the mapping between stream names and track index and make sure the output SCD has the track in the proper order
         private static Dictionary<string, Dictionary<int, int>> _streamsMapping = new Dictionary<string, Dictionary<int, int>>();
-
+        private static List<string>  _voiceFiles = new List<string>();
 
         static void Main(string[] args)
         {
             if (args.Length == 3)
             {
+                // Get voice files
+                foreach (var file in Directory.GetFiles(RESOURCES_PATH, "*_voice_files.json"))
+                {
+                    var content = File.ReadAllText(file);
+                    var data = JsonConvert.DeserializeObject<List<string>>(content);
+
+                    _voiceFiles.AddRange(data);
+                }
+
                 // Parse JSON files in the resources folder to get streams index mapping
-                foreach (var file in Directory.GetFiles(RESOURCES_PATH, "*.json"))
+                foreach (var file in Directory.GetFiles(RESOURCES_PATH, "*_mapping.json"))
                 {
                     var content = File.ReadAllText(file);
                     var data = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<int, int>>>(content);
@@ -43,9 +53,22 @@ namespace AudioConverter
                     var allPS2files = Directory.GetFiles(ps2ExtractionFolder, "*.*", SearchOption.AllDirectories);
                     var allPCfiles = Directory.GetFiles(pcExtractionFolder, "*.*", SearchOption.AllDirectories);
 
+                    var performanceWatch = new Stopwatch();
+                    performanceWatch.Start();
+
+                    var convertedFilesCount = 0;
+
+                    var validFiles = new List<string>();
+
                     foreach (var file in allPS2files)
                     {
                         var filename = Path.GetFileName(file);
+
+                        if (!_voiceFiles.Contains(filename))
+                        {
+                            continue;
+                        }
+
                         var extension = Path.GetExtension(file);
 
                         if (SUPPORTED_EXTENSIONS.Contains(extension) && !EXCLUDED_FILES.Contains(filename))
@@ -76,6 +99,11 @@ namespace AudioConverter
                             var originalSCDRelativePath = originalSCDFolder.Replace($"{pcExtractionFolder}\\", "");
                             var scdOutputFolder = Path.Combine(outputFolder, originalSCDRelativePath);
 
+                            var scdConvertionPerformanceWatch = new Stopwatch();
+                            scdConvertionPerformanceWatch.Start();
+
+                            Console.WriteLine($"File {filename}");
+
                             if (SCDEncoder.SCDTools.ConvertFile(file, scdOutputFolder, originalSCDFolder, mapping))
                             {
                                 // Copy original file in the "original" output folder
@@ -87,10 +115,21 @@ namespace AudioConverter
 
                                 File.Copy(file, originalFilePath, true);
 
-                                //Console.WriteLine($"Converted {Path.GetFileName(file)}");
+                                scdConvertionPerformanceWatch.Stop();
+                                Console.WriteLine($"Done in {scdConvertionPerformanceWatch.ElapsedMilliseconds}ms");
+
+                                convertedFilesCount++;
+
+                                validFiles.Add(filename);
                             }
                         }
                     }
+
+                    var validFilesPath = Path.Combine(outputFolder, "validFiles.txt");
+                    File.WriteAllText(validFilesPath, String.Join(Environment.NewLine, validFiles)) ;
+
+                    performanceWatch.Stop();
+                    Console.WriteLine($"Converted {convertedFilesCount} files in {performanceWatch.ElapsedMilliseconds}ms");
                 }
                 else
                 {
@@ -109,11 +148,27 @@ namespace AudioConverter
             for (int i = 0; i < pcFiles.Length; i++)
             {
                 var filename = pcFiles[i];
-                var parentFolder = Directory.GetParent(filename);
 
-                if (filename.Contains("remastered") && parentFolder.Name == ps2Filename)
+                if (filename.Contains("remastered"))
                 {
-                    return parentFolder.FullName;
+                    var parentFolder = Directory.GetParent(filename);
+                    
+                    if (parentFolder.Name == ps2Filename)
+                    {
+                        return parentFolder.FullName;
+                    }
+                }
+                else if (filename.Contains("original"))
+                {
+                    var extension = Path.GetExtension(filename);
+
+                    if (extension == ".scd")
+                    {
+                        if (Path.GetFileNameWithoutExtension(filename) == $"{Path.GetFileNameWithoutExtension(ps2Filename)}.win32")
+                        {
+                            return filename;
+                        }
+                    }
                 }
             }
 
