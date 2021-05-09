@@ -212,14 +212,15 @@ namespace SCDEncoder
             }
             else
             {
-                for (int i = 0; i < wavFiles.Count; i++)
+                for (int i = 1; i <= wavFiles.Count; i++)
                 {
-                    orderedWavFiles.Add(i, wavFiles[i]);
+                    orderedWavFiles.Add(i, wavFiles[i - 1]);
                 }
             }
 
             if (orderedWavFiles.Count != wavFiles.Count)
             {
+                Console.WriteLine($"{Path.GetFileName(originalSCDFile)} has {wavFiles.Count} tracks, not {orderedWavFiles.Count}!");
                 throw new Exception("Some stream names haven't been found!");
             }
 
@@ -243,7 +244,7 @@ namespace SCDEncoder
                 var streamAudioData = new byte[0];
 
                 // Convert wav files according to origin SCD codec
-                var originalScdStream = scd.StreamsData[wavFile.Key];
+                var originalScdStream = scd.StreamsData[index - 1];
 
                 if (originalScdStream.Header.Codec == (uint)SCD.Codecs.MSADPCM)
                 {

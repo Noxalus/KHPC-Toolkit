@@ -111,7 +111,7 @@ namespace AudioConverter
                         var scdConvertionPerformanceWatch = new Stopwatch();
                         scdConvertionPerformanceWatch.Start();
 
-                        Console.WriteLine($"File {filename}");
+                        //Console.WriteLine($"File {filename}");
 
                         if (SCDEncoder.SCDTools.ConvertFile(file, scdOutputFolder, originalSCDFolder, mapping))
                         {
