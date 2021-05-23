@@ -10,7 +10,12 @@ namespace AudioConverter
     {
         private static readonly string RESOURCES_PATH = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), "resources");
         private static readonly List<string> SUPPORTED_EXTENSIONS = new List<string>() { ".vsb", ".vset", ".mdls", ".dat", ".bar", ".fr", ".vag" };
-        private static readonly List<string> EXCLUDED_FILES = new List<string>() { "voice001.vset", "demo.dat", "end.dat", "end2.dat", "opn.dat" };
+        private static readonly List<string> EXCLUDED_FILES = new List<string>() { 
+            "xs_simba.dat", // No voice
+            "voice001.vset", "pi_022.vset", "di_008.vset", "pc_321.vset", // Jap voices
+            "xa_ex_2170.mdls", // Place holders
+            "demo.dat", "end.dat", "end2.dat", "opn.dat" // Videos
+        };
         
         // Used to store the mapping between stream names and track index and make sure the output SCD has the track in the proper order
         private static Dictionary<string, Dictionary<int, int>> _streamsMapping = new Dictionary<string, Dictionary<int, int>>();
@@ -127,8 +132,10 @@ namespace AudioConverter
                                 File.Copy(file, originalFilePath, true);
                             }
 
+                            Console.WriteLine($"Converted: {filename}");
+
                             scdConvertionPerformanceWatch.Stop();
-                            Console.WriteLine($"Done in {scdConvertionPerformanceWatch.ElapsedMilliseconds}ms");
+                            //Console.WriteLine($"Done in {scdConvertionPerformanceWatch.ElapsedMilliseconds}ms");
 
                             convertedFilesCount++;
 
