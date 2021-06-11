@@ -9,7 +9,7 @@ namespace AudioConverter
     class Program
     {
         private static readonly string RESOURCES_PATH = Path.Combine(Path.GetDirectoryName(AppContext.BaseDirectory), "resources");
-        private static readonly List<string> SUPPORTED_EXTENSIONS = new List<string>() { ".vsb", ".vset", ".mdls", ".dat", ".bar", ".fr", ".vag" };
+        private static readonly List<string> SUPPORTED_EXTENSIONS = new List<string>() { ".fr" };//{ ".vsb", ".vset", ".mdls", ".dat", ".bar", ".fr", ".vag" };
         private static readonly List<string> EXCLUDED_FILES = new List<string>() { 
             "xs_simba.dat", // No voice
             "voice001.vset", "pi_022.vset", "di_008.vset", "pc_321.vset", // Jap voices
@@ -82,10 +82,10 @@ namespace AudioConverter
                 {
                     var filename = Path.GetFileName(file);
 
-                    //if (!filename.Contains("di_001.vset"))
-                    //{
-                    //    continue;
-                    //}
+                    if (!filename.Contains("a.fr"))
+                    {
+                        continue;
+                    }
 
                     //if (!_voiceFiles.Contains(filename))
                     //{
@@ -169,6 +169,13 @@ namespace AudioConverter
 
         private static string FindPCEquivalent(string ps2Filename, string[] pcFiles)
         {
+            // For KH2, the .a.fr extension corresponds to the french version
+            // the equivalent one on PC has another extension: a.us
+            if (ps2Filename.EndsWith(".a.fr"))
+            {
+                ps2Filename = ps2Filename.Replace(".a.fr", ".a.us");
+            }
+
             for (int i = 0; i < pcFiles.Length; i++)
             {
                 var filename = pcFiles[i];
