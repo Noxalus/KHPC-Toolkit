@@ -72,9 +72,20 @@ namespace AudioConverter
 
                 var validFiles = new List<string>();
 
+                // Create output folder
+                if (Directory.Exists(outputFolder))
+                {
+                    Directory.CreateDirectory(outputFolder);
+                }
+
                 foreach (var file in allPS2files)
                 {
                     var filename = Path.GetFileName(file);
+
+                    //if (!filename.Contains("di_001.vset"))
+                    //{
+                    //    continue;
+                    //}
 
                     //if (!_voiceFiles.Contains(filename))
                     //{
@@ -120,17 +131,17 @@ namespace AudioConverter
 
                         if (SCDEncoder.SCDTools.ConvertFile(file, scdOutputFolder, originalSCDFolder, mapping))
                         {
-                            if (originalSCDFolder.Contains(REMASTERED_FOLDER))
-                            {
-                                // Copy original file in the "original" output folder
-                                var originalFilePath = Path.Combine(outputFolder, originalSCDRelativePath.Replace(REMASTERED_FOLDER, ORIGINAL_FOLDER));
-                                var originalFileFolder = Directory.GetParent(originalFilePath).FullName;
+                            //if (originalSCDFolder.Contains(REMASTERED_FOLDER))
+                            //{
+                            //    // Copy original file in the "original" output folder
+                            //    var originalFilePath = Path.Combine(outputFolder, originalSCDRelativePath.Replace(REMASTERED_FOLDER, ORIGINAL_FOLDER));
+                            //    var originalFileFolder = Directory.GetParent(originalFilePath).FullName;
 
-                                if (!Directory.Exists(originalFileFolder))
-                                    Directory.CreateDirectory(originalFileFolder);
+                            //    if (!Directory.Exists(originalFileFolder))
+                            //        Directory.CreateDirectory(originalFileFolder);
 
-                                File.Copy(file, originalFilePath, true);
-                            }
+                            //    File.Copy(file, originalFilePath, true);
+                            //}
 
                             Console.WriteLine($"Converted: {filename}");
 
