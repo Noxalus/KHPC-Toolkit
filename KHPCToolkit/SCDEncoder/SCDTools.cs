@@ -102,7 +102,7 @@ namespace SCDEncoder
                     // Convert WAV PCM (any sample rate) to WAV PCM with a sample rate of 48kHz
                     if (USE_SOX)
                     {
-                        var increaseVolume = fileExtension == ".vset" ? "vol 10 dB" : "";
+                        var increaseVolume = fileExtension == ".vset" ? "norm -0.1" : "";
 
                         var currentWav48kHzFile  = Path.Combine(TMP_FOLDER, $"{Path.GetFileNameWithoutExtension(vagFile)}-48.wav");
                         p.StartInfo.FileName = $@"{TOOLS_PATH}/sox/sox.exe";
