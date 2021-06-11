@@ -139,6 +139,13 @@ namespace SCDEncoder
                 {
                     outputSCDFiles.Add(file);
                 }
+
+                // For KH2, a.us/a.fr files contains SCD without extension in voice/battle/us folder
+                var voiceFolder = Path.Combine(originalSCDFolder, "voice/battle/us");
+                if (Directory.Exists(voiceFolder))
+                {
+                    outputSCDFiles.AddRange(Directory.GetFiles(voiceFolder));
+                }
             }
             else
             {
